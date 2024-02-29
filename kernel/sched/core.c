@@ -4560,10 +4560,14 @@ static void __sched_fork(unsigned long clone_flags, struct task_struct *p)
 }
 
 DEFINE_STATIC_KEY_FALSE(sched_numa_balancing);
+DEFINE_STATIC_KEY_TRUE(sched_nb_task_migration);
+DEFINE_STATIC_KEY_TRUE(sched_nb_memory_migration);
 
 #ifdef CONFIG_NUMA_BALANCING
 
 int sysctl_numa_balancing_mode;
+static unsigned int sysctl_nb_task_migration = 1;
+static unsigned int sysctl_nb_memory_migration = 1;
 
 static void __set_numabalancing_state(bool enabled)
 {
@@ -4571,6 +4575,24 @@ static void __set_numabalancing_state(bool enabled)
 		static_branch_enable(&sched_numa_balancing);
 	else
 		static_branch_disable(&sched_numa_balancing);
+}
+
+static void __set_nb_task_migration_state(bool enabled) 
+{
+	trace_printk("NUMA balancing : setting sched_nb_task_migration to %d\n", enabled);
+	if (enabled)
+		static_branch_enable(&sched_nb_task_migration);
+	else
+		static_branch_disable(&sched_nb_task_migration);
+}
+
+static void __set_nb_memory_migration_state(bool enabled) 
+{
+	trace_printk("NUMA balancing : setting sched_nb_memory_migration to %d\n", enabled);
+	if (enabled)
+		static_branch_enable(&sched_nb_memory_migration);
+	else
+		static_branch_disable(&sched_nb_memory_migration);
 }
 
 void set_numabalancing_state(bool enabled)
@@ -4616,6 +4638,31 @@ static int sysctl_numa_balancing(struct ctl_table *table, int write,
 		sysctl_numa_balancing_mode = state;
 		__set_numabalancing_state(state);
 	}
+	return err;
+}
+
+// We need these functions to assign the static branch
+static int sysctl_nb_task_migration_handler(struct ctl_table *table, int write,
+			  void *buffer, size_t *lenp, loff_t *ppos) 
+{
+	// Will write to `table->data`, that should be `sysctl_nb_task_migration`
+	int err = proc_dointvec_minmax(table, write, buffer, lenp, ppos);
+	if (err < 0)
+		return err;
+	if (write)
+		__set_nb_task_migration_state(sysctl_nb_task_migration);
+	return err;
+}
+
+static int sysctl_nb_memory_migration_handler(struct ctl_table *table, int write,
+			  void *buffer, size_t *lenp, loff_t *ppos) 
+{
+	// Will write to `table->data`, that should be `sysctl_nb_memory_migration`
+	int err = proc_dointvec_minmax(table, write, buffer, lenp, ppos);
+	if (err < 0)
+		return err;
+	if (write)
+		__set_nb_memory_migration_state(sysctl_nb_memory_migration);
 	return err;
 }
 #endif
@@ -4730,6 +4777,24 @@ static struct ctl_table sched_core_sysctls[] = {
 		.proc_handler	= sysctl_numa_balancing,
 		.extra1		= SYSCTL_ZERO,
 		.extra2		= SYSCTL_FOUR,
+	},
+	{
+		.procname	= "nb_task_migration",
+		.data		= &sysctl_nb_task_migration, /* filled in by handler */
+		.maxlen		= sizeof(unsigned int),
+		.mode		= 0644,
+		.proc_handler	= sysctl_nb_task_migration_handler,
+		.extra1		= SYSCTL_ZERO,
+		.extra2		= SYSCTL_ONE,
+	},
+	{
+		.procname	= "nb_memory_migration",
+		.data		= &sysctl_nb_memory_migration, /* filled in by handler */
+		.maxlen		= sizeof(unsigned int),
+		.mode		= 0644,
+		.proc_handler	= sysctl_nb_memory_migration_handler,
+		.extra1		= SYSCTL_ZERO,
+		.extra2		= SYSCTL_ONE,
 	},
 #endif /* CONFIG_NUMA_BALANCING */
 	{}

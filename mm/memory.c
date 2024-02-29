@@ -104,6 +104,9 @@ struct page *mem_map;
 EXPORT_SYMBOL(mem_map);
 #endif
 
+extern struct static_key_true sched_nb_task_migration;
+extern struct static_key_true sched_nb_memory_migration;
+
 static vm_fault_t do_fault(struct vm_fault *vmf);
 static vm_fault_t do_anonymous_page(struct vm_fault *vmf);
 static bool vmf_pte_changed(struct vm_fault *vmf);
@@ -4951,6 +4954,9 @@ static vm_fault_t do_numa_page(struct vm_fault *vmf)
 	    can_change_pte_writable(vma, vmf->address, pte))
 		writable = true;
 
+	if (!static_branch_likely(&sched_nb_memory_migration))
+		goto out_map;
+
 	folio = vm_normal_folio(vma, vmf->address, pte);
 	if (!folio || folio_is_zone_device(folio))
 		goto out_map;
@@ -5013,6 +5019,8 @@ static vm_fault_t do_numa_page(struct vm_fault *vmf)
 	}
 
 out:
+	if (!static_branch_likely(&sched_nb_task_migration))
+		return 0;
 	if (nid != NUMA_NO_NODE)
 		task_numa_fault(last_cpupid, nid, 1, flags);
 	return 0;
