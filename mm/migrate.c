@@ -2555,6 +2555,8 @@ static int numamigrate_isolate_folio(pg_data_t *pgdat, struct folio *folio)
 int migrate_misplaced_folio(struct folio *folio, struct vm_area_struct *vma,
 			    int node)
 {
+	trace_printk("NUMA balancing - migrate_misplaced_folio with node = %d. Folio has %ld pages\n", node, folio_nr_pages(folio));
+
 	pg_data_t *pgdat = NODE_DATA(node);
 	int isolated;
 	int nr_remaining;

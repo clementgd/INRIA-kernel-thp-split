@@ -634,6 +634,8 @@ unlock:
 unsigned long change_prot_numa(struct vm_area_struct *vma,
 			unsigned long addr, unsigned long end)
 {
+	trace_printk("NUMA balancing - change_prot_numa on vma [%lu, %lu], add=%lu, end=%lu" vma->vm_start, vma->vm_end, addr, end);
+
 	struct mmu_gather tlb;
 	long nr_updated;
 
