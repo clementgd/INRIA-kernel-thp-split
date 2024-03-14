@@ -4579,7 +4579,7 @@ static void __set_numabalancing_state(bool enabled)
 
 static void __set_nb_task_migration_state(bool enabled) 
 {
-	trace_printk("NUMA balancing : setting sched_nb_task_migration to %d\n", enabled);
+	trace_printk("NUMA balancing - Setting state to %d\n", enabled);
 	if (enabled)
 		static_branch_enable(&sched_nb_task_migration);
 	else
@@ -4588,7 +4588,7 @@ static void __set_nb_task_migration_state(bool enabled)
 
 static void __set_nb_memory_migration_state(bool enabled) 
 {
-	trace_printk("NUMA balancing : setting sched_nb_memory_migration to %d\n", enabled);
+	trace_printk("NUMA balancing - Setting state to %d\n", enabled);
 	if (enabled)
 		static_branch_enable(&sched_nb_memory_migration);
 	else
