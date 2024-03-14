@@ -4954,12 +4954,14 @@ static vm_fault_t do_numa_page(struct vm_fault *vmf)
 	    can_change_pte_writable(vma, vmf->address, pte))
 		writable = true;
 
-	if (!static_branch_likely(&sched_nb_memory_migration)) {
-		trace_printk("NUMA balancing - Skipping memory migration\n");
+	if (!static_branch_likely(&sched_nb_memory_migration))
 		goto out_map;
-	} else {
-		trace_printk("NUMA balancing - Memory migration is still enabled\n");
-	}
+	// if (!static_branch_likely(&sched_nb_memory_migration)) {
+	// 	trace_printk("NUMA balancing - Skipping memory migration\n");
+	// 	goto out_map;
+	// } else {
+	// 	trace_printk("NUMA balancing - Memory migration is still enabled\n");
+	// }
 		
 
 	folio = vm_normal_folio(vma, vmf->address, pte);
@@ -5024,12 +5026,14 @@ static vm_fault_t do_numa_page(struct vm_fault *vmf)
 	}
 
 out:
-	if (!static_branch_likely(&sched_nb_task_migration)) {
-		trace_printk("NUMA balancing - Skipping task migration\n");
+	if (!static_branch_likely(&sched_nb_task_migration))
 		return 0;
-	} else {
-		trace_printk("NUMA balancing - Task migration is still enabled\n");
-	}
+	// if (!static_branch_likely(&sched_nb_task_migration)) {
+	// 	trace_printk("NUMA balancing - Skipping task migration\n");
+	// 	return 0;
+	// } else {
+	// 	trace_printk("NUMA balancing - Task migration is still enabled\n");
+	// }
 	if (nid != NUMA_NO_NODE)
 		task_numa_fault(last_cpupid, nid, 1, flags);
 	return 0;

@@ -1742,7 +1742,7 @@ vm_fault_t do_huge_pmd_numa_page(struct vm_fault *vmf)
 	    can_change_pmd_writable(vma, vmf->address, pmd))
 		writable = true;
 
-	if (!static_branch_likely(&sched_nb_memory_migration)) {
+	if (!static_branch_likely(&sched_nb_memory_migration))
 		goto out_map;
 	// if (!static_branch_likely(&sched_nb_memory_migration)) {
 	// 	trace_printk("NUMA balancing - Skipping memory migration\n");
@@ -1790,12 +1790,11 @@ vm_fault_t do_huge_pmd_numa_page(struct vm_fault *vmf)
 	}
 
 out:
-	if (!static_branch_likely(&sched_nb_task_migration)) {
-		trace_printk("NUMA balancing - Skipping task migration\n");
+	if (!static_branch_likely(&sched_nb_task_migration))
 		return 0;
-	} else {
-		trace_printk("NUMA balancing - Task migration is still enabled\n");
-	}
+	// } else {
+	// 	trace_printk("NUMA balancing - Task migration is still enabled\n");
+	// }
 	if (nid != NUMA_NO_NODE)
 		task_numa_fault(last_cpupid, nid, HPAGE_PMD_NR, flags);
 
