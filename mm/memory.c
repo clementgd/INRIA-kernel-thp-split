@@ -5006,8 +5006,8 @@ static vm_fault_t do_numa_page(struct vm_fault *vmf)
 		unsigned long folio_size_kb = folio_size(folio) >> 10;
 		unsigned int folio_start_in_vma = (vmf->address - vma->vm_start) * 1000 / (vma->vm_end - vma->vm_start);
 		trace_printk(
-			"NUMAB MEM ACCESS process[nid:%d, cpu:%d, pid:%d], folio[addr:%p, nid:%d. pages:%lu, size:%lu KB, pos:%u/1000], vma[start:%p, end:%p, size:%lu KB]\n", 
-			task_nid, task_cpu, task_pid, (void *) vmf->address, nid, folio_nr_pages(folio), folio_size_kb, folio_start_in_vma, (void *) vma->vm_start, (void *) vma->vm_end, vma_size_kb
+			"NUMAB MEM ACCESS process[nid:%d, cpu:%d, pid:%d], folio[addr:%p, kaddr:%p, fpaddr:%p, nid:%d. pages:%lu, size:%lu KB, pos:%u/1000], vma[start:%p, end:%p, size:%lu KB]\n", 
+			task_nid, task_cpu, task_pid, (void *) vmf->address, (void *) folio_address(folio), (void *) page_address(folio_page(folio, 0)), nid, folio_nr_pages(folio), folio_size_kb, folio_start_in_vma, (void *) vma->vm_start, (void *) vma->vm_end, vma_size_kb
 		);
 	}
 
