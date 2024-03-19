@@ -68,6 +68,8 @@ unsigned long transparent_hugepage_flags __read_mostly =
 
 extern struct static_key_true sched_nb_task_migration;
 extern struct static_key_true sched_nb_memory_migration;
+extern struct static_key_false sched_trace_nb_memory_access;
+extern struct static_key_false sched_trace_nb_memory_migration;
 
 static struct shrinker *deferred_split_shrinker;
 static unsigned long deferred_split_count(struct shrinker *shrink,
@@ -1744,12 +1746,6 @@ vm_fault_t do_huge_pmd_numa_page(struct vm_fault *vmf)
 
 	if (!static_branch_likely(&sched_nb_memory_migration))
 		goto out_map;
-	// if (!static_branch_likely(&sched_nb_memory_migration)) {
-	// 	trace_printk("NUMA balancing - Skipping memory migration\n");
-	// 	goto out_map;
-	// } else {
-	// 	trace_printk("NUMA balancing - Memory migration is still enabled\n");
-	// }
 
 	folio = vm_normal_folio_pmd(vma, haddr, pmd);
 	if (!folio)
@@ -1792,9 +1788,6 @@ vm_fault_t do_huge_pmd_numa_page(struct vm_fault *vmf)
 out:
 	if (!static_branch_likely(&sched_nb_task_migration))
 		return 0;
-	// } else {
-	// 	trace_printk("NUMA balancing - Task migration is still enabled\n");
-	// }
 	if (nid != NUMA_NO_NODE)
 		task_numa_fault(last_cpupid, nid, HPAGE_PMD_NR, flags);
 

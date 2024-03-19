@@ -106,6 +106,9 @@ EXPORT_SYMBOL(mem_map);
 
 extern struct static_key_true sched_nb_task_migration;
 extern struct static_key_true sched_nb_memory_migration;
+extern struct static_key_false sched_trace_nb_memory_access;
+extern struct static_key_false sched_trace_nb_memory_migration;
+
 
 static vm_fault_t do_fault(struct vm_fault *vmf);
 static vm_fault_t do_anonymous_page(struct vm_fault *vmf);
@@ -4956,12 +4959,6 @@ static vm_fault_t do_numa_page(struct vm_fault *vmf)
 
 	if (!static_branch_likely(&sched_nb_memory_migration))
 		goto out_map;
-	// if (!static_branch_likely(&sched_nb_memory_migration)) {
-	// 	trace_printk("NUMA balancing - Skipping memory migration\n");
-	// 	goto out_map;
-	// } else {
-	// 	trace_printk("NUMA balancing - Memory migration is still enabled\n");
-	// }
 		
 
 	folio = vm_normal_folio(vma, vmf->address, pte);
@@ -5000,6 +4997,18 @@ static vm_fault_t do_numa_page(struct vm_fault *vmf)
 		last_cpupid = (-1 & LAST_CPUPID_MASK);
 	else
 		last_cpupid = folio_last_cpupid(folio);
+
+	if (static_branch_unlikely(&sched_trace_nb_memory_access)) {
+		int task_pid =  current->pid;
+		int task_cpu = raw_smp_processor_id();
+		int task_nid = cpu_to_node(task_cpu);
+		unsigned long vma_size_kb = vma->vm_end - vma->vm_start;
+		trace_printk(
+			"NB mem access process[nid:%d, cpu:%d, pid:%d], folio[addr:%p, nid:%d. pages:%lu], vma[start:%p, end:%p, size:%luKB]\n", 
+			task_nid, task_cpu, task_pid, (void *) vmf->address, nid, folio_nr_pages(folio), (void *) vma->vm_start, (void *) vma->vm_end, vma_size_kb
+		);
+	}
+
 	target_nid = numa_migrate_prep(folio, vma, vmf->address, nid, &flags);
 	if (target_nid == NUMA_NO_NODE) {
 		folio_put(folio);

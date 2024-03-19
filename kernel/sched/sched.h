@@ -2135,6 +2135,8 @@ static const_debug __maybe_unused unsigned int sysctl_sched_features =
 extern struct static_key_false sched_numa_balancing;
 extern struct static_key_true sched_nb_task_migration;
 extern struct static_key_true sched_nb_memory_migration;
+extern struct static_key_false sched_trace_nb_memory_access;
+extern struct static_key_false sched_trace_nb_memory_migration;
 extern struct static_key_false sched_schedstats;
 
 static inline u64 global_rt_period(void)

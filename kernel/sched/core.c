@@ -4562,12 +4562,16 @@ static void __sched_fork(unsigned long clone_flags, struct task_struct *p)
 DEFINE_STATIC_KEY_FALSE(sched_numa_balancing);
 DEFINE_STATIC_KEY_TRUE(sched_nb_task_migration);
 DEFINE_STATIC_KEY_TRUE(sched_nb_memory_migration);
+DEFINE_STATIC_KEY_FALSE(sched_trace_nb_memory_access);
+DEFINE_STATIC_KEY_FALSE(sched_trace_nb_memory_migration);
 
 #ifdef CONFIG_NUMA_BALANCING
 
 int sysctl_numa_balancing_mode;
 static unsigned int sysctl_nb_task_migration = 1;
 static unsigned int sysctl_nb_memory_migration = 1;
+static unsigned int sysctl_trace_nb_memory_access = 1; // This is only the value used internally. Should not influence the default value
+static unsigned int sysctl_trace_nb_memory_migration = 1;
 
 static void __set_numabalancing_state(bool enabled)
 {
@@ -4579,6 +4583,7 @@ static void __set_numabalancing_state(bool enabled)
 
 static void __set_nb_task_migration_state(bool enabled) 
 {
+	// Function name will be printed along with the message
 	trace_printk("NUMA balancing - Setting state to %d\n", enabled);
 	if (enabled)
 		static_branch_enable(&sched_nb_task_migration);
@@ -4593,6 +4598,24 @@ static void __set_nb_memory_migration_state(bool enabled)
 		static_branch_enable(&sched_nb_memory_migration);
 	else
 		static_branch_disable(&sched_nb_memory_migration);
+}
+
+static void __set_trace_nb_memory_access_state(bool enabled) 
+{
+	trace_printk("NUMA balancing - Setting state to %d\n", enabled);
+	if (enabled)
+		static_branch_enable(&sched_trace_nb_memory_access);
+	else
+		static_branch_disable(&sched_trace_nb_memory_access);
+}
+
+static void __set_trace_nb_memory_migration_state(bool enabled) 
+{
+	trace_printk("NUMA balancing - Setting state to %d\n", enabled);
+	if (enabled)
+		static_branch_enable(&sched_trace_nb_memory_migration);
+	else
+		static_branch_disable(&sched_trace_nb_memory_migration);
 }
 
 void set_numabalancing_state(bool enabled)
@@ -4657,12 +4680,33 @@ static int sysctl_nb_task_migration_handler(struct ctl_table *table, int write,
 static int sysctl_nb_memory_migration_handler(struct ctl_table *table, int write,
 			  void *buffer, size_t *lenp, loff_t *ppos) 
 {
-	// Will write to `table->data`, that should be `sysctl_nb_memory_migration`
 	int err = proc_dointvec_minmax(table, write, buffer, lenp, ppos);
 	if (err < 0)
 		return err;
 	if (write)
 		__set_nb_memory_migration_state(sysctl_nb_memory_migration);
+	return err;
+}
+
+static int sysctl_trace_nb_memory_access_handler(struct ctl_table *table, int write,
+			  void *buffer, size_t *lenp, loff_t *ppos) 
+{
+	int err = proc_dointvec_minmax(table, write, buffer, lenp, ppos);
+	if (err < 0)
+		return err;
+	if (write)
+		__set_trace_nb_memory_access_state(sysctl_nb_memory_migration);
+	return err;
+}
+
+static int sysctl_trace_nb_memory_migration_handler(struct ctl_table *table, int write,
+			  void *buffer, size_t *lenp, loff_t *ppos) 
+{
+	int err = proc_dointvec_minmax(table, write, buffer, lenp, ppos);
+	if (err < 0)
+		return err;
+	if (write)
+		__set_trace_nb_memory_migration_state(sysctl_nb_memory_migration);
 	return err;
 }
 #endif
@@ -4780,22 +4824,41 @@ static struct ctl_table sched_core_sysctls[] = {
 	},
 	{
 		.procname	= "nb_task_migration",
-		.data		= &sysctl_nb_task_migration, /* filled in by handler */
+		.data		= &sysctl_nb_task_migration,
 		.maxlen		= sizeof(unsigned int),
 		.mode		= 0644,
 		.proc_handler	= sysctl_nb_task_migration_handler,
-		.extra1		= SYSCTL_ZERO,
-		.extra2		= SYSCTL_ONE,
+		.extra1		= SYSCTL_ZERO, // Min value for the sysctl
+		.extra2		= SYSCTL_ONE, // Max value
 	},
 	{
 		.procname	= "nb_memory_migration",
-		.data		= &sysctl_nb_memory_migration, /* filled in by handler */
+		.data		= &sysctl_nb_memory_migration,
 		.maxlen		= sizeof(unsigned int),
 		.mode		= 0644,
 		.proc_handler	= sysctl_nb_memory_migration_handler,
 		.extra1		= SYSCTL_ZERO,
 		.extra2		= SYSCTL_ONE,
 	},
+	{
+		.procname	= "trace_nb_memory_access",
+		.data		= &sysctl_trace_nb_memory_access,
+		.maxlen		= sizeof(unsigned int),
+		.mode		= 0644,
+		.proc_handler	= sysctl_trace_nb_memory_access_handler,
+		.extra1		= SYSCTL_ZERO,
+		.extra2		= SYSCTL_ONE,
+	},
+	{
+		.procname	= "trace_nb_memory_migration",
+		.data		= &sysctl_trace_nb_memory_migration,
+		.maxlen		= sizeof(unsigned int),
+		.mode		= 0644,
+		.proc_handler	= sysctl_trace_nb_memory_migration_handler,
+		.extra1		= SYSCTL_ZERO,
+		.extra2		= SYSCTL_ONE,
+	},
+	// At the moment we don't need to trace tasks migration because we can see it in the trace
 #endif /* CONFIG_NUMA_BALANCING */
 	{}
 };
