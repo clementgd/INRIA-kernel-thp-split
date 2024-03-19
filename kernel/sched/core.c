@@ -4570,8 +4570,8 @@ DEFINE_STATIC_KEY_FALSE(sched_trace_nb_memory_migration);
 int sysctl_numa_balancing_mode;
 static unsigned int sysctl_nb_task_migration = 1;
 static unsigned int sysctl_nb_memory_migration = 1;
-static unsigned int sysctl_trace_nb_memory_access = 1; // This is only the value used internally. Should not influence the default value
-static unsigned int sysctl_trace_nb_memory_migration = 1;
+static unsigned int sysctl_trace_nb_memory_access = 0; // Not the default value of the system but the one in the sysctl file
+static unsigned int sysctl_trace_nb_memory_migration = 0; // So better be consistent with the default statickey value
 
 static void __set_numabalancing_state(bool enabled)
 {
@@ -4584,7 +4584,7 @@ static void __set_numabalancing_state(bool enabled)
 static void __set_nb_task_migration_state(bool enabled) 
 {
 	// Function name will be printed along with the message
-	trace_printk("NUMA balancing - Setting state to %d\n", enabled);
+	trace_printk("NUMAB Setting sysctl to %d\n", enabled);
 	if (enabled)
 		static_branch_enable(&sched_nb_task_migration);
 	else
@@ -4593,7 +4593,7 @@ static void __set_nb_task_migration_state(bool enabled)
 
 static void __set_nb_memory_migration_state(bool enabled) 
 {
-	trace_printk("NUMA balancing - Setting state to %d\n", enabled);
+	trace_printk("NUMAB Setting sysctl to %d\n", enabled);
 	if (enabled)
 		static_branch_enable(&sched_nb_memory_migration);
 	else
@@ -4602,7 +4602,7 @@ static void __set_nb_memory_migration_state(bool enabled)
 
 static void __set_trace_nb_memory_access_state(bool enabled) 
 {
-	trace_printk("NUMA balancing - Setting state to %d\n", enabled);
+	trace_printk("NUMAB Setting sysctl to %d\n", enabled);
 	if (enabled)
 		static_branch_enable(&sched_trace_nb_memory_access);
 	else
@@ -4611,7 +4611,7 @@ static void __set_trace_nb_memory_access_state(bool enabled)
 
 static void __set_trace_nb_memory_migration_state(bool enabled) 
 {
-	trace_printk("NUMA balancing - Setting state to %d\n", enabled);
+	trace_printk("NUMAB Setting sysctl to %d\n", enabled);
 	if (enabled)
 		static_branch_enable(&sched_trace_nb_memory_migration);
 	else

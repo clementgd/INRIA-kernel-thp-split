@@ -5002,10 +5002,12 @@ static vm_fault_t do_numa_page(struct vm_fault *vmf)
 		int task_pid =  current->pid;
 		int task_cpu = raw_smp_processor_id();
 		int task_nid = cpu_to_node(task_cpu);
-		unsigned long vma_size_kb = vma->vm_end - vma->vm_start;
+		unsigned long vma_size_kb = (vma->vm_end - vma->vm_start) >> 10;
+		unsigned long folio_size_kb = folio_size(folio) >> 10;
+		unsigned int folio_start_in_vma = (vmf->address - vma->vm_start) * 1000 / (vma->vm_end - vma->vm_start);
 		trace_printk(
-			"NB mem access process[nid:%d, cpu:%d, pid:%d], folio[addr:%p, nid:%d. pages:%lu], vma[start:%p, end:%p, size:%luKB]\n", 
-			task_nid, task_cpu, task_pid, (void *) vmf->address, nid, folio_nr_pages(folio), (void *) vma->vm_start, (void *) vma->vm_end, vma_size_kb
+			"NUMAB MEM ACCESS process[nid:%d, cpu:%d, pid:%d], folio[addr:%p, nid:%d. pages:%lu, size:%lu KB, pos:%u/1000], vma[start:%p, end:%p, size:%lu KB]\n", 
+			task_nid, task_cpu, task_pid, (void *) vmf->address, nid, folio_nr_pages(folio), folio_size_kb, folio_start_in_vma, (void *) vma->vm_start, (void *) vma->vm_end, vma_size_kb
 		);
 	}
 
@@ -5021,6 +5023,19 @@ static vm_fault_t do_numa_page(struct vm_fault *vmf)
 	if (migrate_misplaced_folio(folio, vma, target_nid)) {
 		nid = target_nid;
 		flags |= TNF_MIGRATED;
+
+		if (static_branch_unlikely(&sched_trace_nb_memory_migration)) {
+			int task_pid =  current->pid;
+			int task_cpu = raw_smp_processor_id();
+			int task_nid = cpu_to_node(task_cpu);
+			unsigned long vma_size_kb = (vma->vm_end - vma->vm_start) >> 10;
+			unsigned long folio_size_kb = folio_size(folio) >> 10;
+			unsigned int folio_start_in_vma = (vmf->address - vma->vm_start) * 1000 / (vma->vm_end - vma->vm_start);
+			trace_printk(
+				"NUMAB MEM MIGRATED process[nid:%d, cpu:%d, pid:%d], folio[addr:%p, nid:%d. pages:%lu, size:%lu KB, pos:%u/1000], vma[start:%p, end:%p, size:%luKB]\n", 
+				task_nid, task_cpu, task_pid, (void *) vmf->address, nid, folio_nr_pages(folio), folio_size_kb, folio_start_in_vma, (void *) vma->vm_start, (void *) vma->vm_end, vma_size_kb
+			);
+		}
 	} else {
 		flags |= TNF_MIGRATE_FAIL;
 		vmf->pte = pte_offset_map_lock(vma->vm_mm, vmf->pmd,

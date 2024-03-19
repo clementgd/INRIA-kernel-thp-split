@@ -1715,8 +1715,6 @@ struct page *follow_trans_huge_pmd(struct vm_area_struct *vma,
 /* NUMA hinting page fault entry point for trans huge pmds */
 vm_fault_t do_huge_pmd_numa_page(struct vm_fault *vmf)
 {
-	trace_printk("NUMA balancing - do_huge_pmd_numa_page\n");
-
 	struct vm_area_struct *vma = vmf->vma;
 	pmd_t oldpmd = vmf->orig_pmd;
 	pmd_t pmd;
