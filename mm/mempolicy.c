@@ -635,7 +635,7 @@ unsigned long change_prot_numa(struct vm_area_struct *vma,
 			unsigned long addr, unsigned long end)
 {
 	unsigned long vma_size_kb = (vma->vm_end - vma->vm_start) >> 10;
-	trace_printk("NUMAB - scanning VMA[start:%p, end:%p, size:%lu] with addr:%p, end:%p\n", (void *) vma->vm_start, (void *) vma->vm_end, vma_size_kb, (void *) addr, (void *) end);
+	trace_printk("NUMAB - scanning VMA[start:%p, end:%p, size:%lu] with addr:%p, end:%p. PAGE_OFFSET:%lu\n", (void *) vma->vm_start, (void *) vma->vm_end, vma_size_kb, (void *) addr, (void *) end, PAGE_OFFSET);
 
 	struct mmu_gather tlb;
 	long nr_updated;
