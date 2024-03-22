@@ -4999,16 +4999,21 @@ static vm_fault_t do_numa_page(struct vm_fault *vmf)
 		last_cpupid = folio_last_cpupid(folio);
 
 	if (static_branch_unlikely(&sched_trace_nb_memory_access)) {
-		int task_pid =  current->pid;
+		int task_pid = current->pid;
 		int task_cpu = raw_smp_processor_id();
 		int task_nid = cpu_to_node(task_cpu);
 		unsigned long vma_size_kb = (vma->vm_end - vma->vm_start) >> 10;
 		unsigned long folio_size_kb = folio_size(folio) >> 10;
 		unsigned int folio_start_in_vma = (vmf->address - vma->vm_start) * 1000 / (vma->vm_end - vma->vm_start);
+		void *folio_kernel_address = folio_address(folio);
+		void* folio_physical_address = (void *) virt_to_phys(folio_kernel_address);
 		// WANT_PAGE_VIRTUAL is disabled on x86, see https://stackoverflow.com/questions/6190353/question-about-the-implementation-of-page-address
 		trace_printk(
-			"NUMAB MEM ACCESS process[nid:%d, cpu:%d, pid:%d], vmf[addr:%p, real_addr:%p], folio[addr:%p, pointer:%p, page_pointer:%p, is_hm:%d, nid:%d, pages:%lu, size:%lu KB, pos:%u/1000], vma[start:%p, end:%p, size:%lu KB]\n", 
-			task_nid, task_cpu, task_pid, (void *) vmf->address, (void *) vmf->real_address, (void *) folio_address(folio), (void *) folio, &folio->page, PageHighMem(&folio->page), nid, folio_nr_pages(folio), folio_size_kb, folio_start_in_vma, (void *) vma->vm_start, (void *) vma->vm_end, vma_size_kb
+			"NUMAB MEM ACCESS process[nid:%d, cpu:%d, pid:%d], vmf[addr:%p, real_addr:%p], folio[kaddr:%p, paddr:%p, pointer:%p, page_pointer:%p, is_hm:%d, nid:%d, pages:%lu, size:%lu KB, pos:%u/1000], vma[start:%p, end:%p, size:%lu KB]\n", 
+			task_nid, task_cpu, task_pid, 
+			(void *) vmf->address, (void *) vmf->real_address, 
+			folio_kernel_address, folio_physical_address, (void *) folio, &folio->page, PageHighMem(&folio->page), nid, folio_nr_pages(folio), folio_size_kb, folio_start_in_vma,
+			(void *) vma->vm_start, (void *) vma->vm_end, vma_size_kb
 		);
 	}
 

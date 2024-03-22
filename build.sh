@@ -1,10 +1,5 @@
 #!/bin/bash
 
-function pause(){
-    read -s -n 1 -p "Kernel will be updated via kexec, press any key to continue..."
-    echo ""
-}
-
 if ! [ -f .config ]; then
     copied_config_file_path=$(find /boot -maxdepth 1 -name "config*" | head -1)
     echo Copied config file : $copied_config_file_path
