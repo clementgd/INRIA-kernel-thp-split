@@ -5041,13 +5041,17 @@ static vm_fault_t do_numa_page(struct vm_fault *vmf)
 	pte_unmap_unlock(vmf->pte, vmf->ptl);
 	writable = false;
 
+	void* folio_old_physical_address = (void *) virt_to_phys(folio_address(folio));
+	int folio_old_nid = nid;
+	int folio_old_npages = folio_nr_pages(folio);
+
 	if (static_branch_unlikely(&sched_nb_memory_migration)) {
 		int t_pid = current->pid;
 		int t_cpu = raw_smp_processor_id();
 		int t_nid = cpu_to_node(t_cpu);
 		void* folio_process_address = (void *) vmf->real_address;
-		void* folio_kernel_address = folio_address(folio);
-		void* folio_physical_address = (void *) virt_to_phys(folio_kernel_address);
+		// void* folio_kernel_address = folio_address(folio);
+		void* folio_physical_address = (void *) virt_to_phys(folio_address(folio));
 		trace_printk(
 			"NUMAB TRY MEM MIGR process[nid:%d, cpu:%d, pid:%d], folio[virt:%p, phys:%p, nid:%d], target_nid:%d\n", 
 			t_nid, t_cpu, t_pid, 
@@ -5060,18 +5064,20 @@ static vm_fault_t do_numa_page(struct vm_fault *vmf)
 		nid = target_nid;
 		flags |= TNF_MIGRATED;
 
-		// if (static_branch_unlikely(&sched_trace_nb_memory_migration)) {
-		// 	int t_pid =  current->pid;
-		// 	int t_cpu = raw_smp_processor_id();
-		// 	int t_nid = cpu_to_node(t_cpu);
-		// 	unsigned long vma_size_kb = (vma->vm_end - vma->vm_start) >> 10;
-		// 	unsigned long folio_size_kb = folio_size(folio) >> 10;
-		// 	unsigned int folio_start_in_vma = (vmf->address - vma->vm_start) * 1000 / (vma->vm_end - vma->vm_start);
-		// 	trace_printk(
-		// 		"NUMAB MEM MIGRATED process[nid:%d, cpu:%d, pid:%d], folio[addr:%p, nid:%d. pages:%lu, size:%lu KB, pos:%u/1000], vma[start:%p, end:%p, size:%luKB]\n", 
-		// 		t_nid, t_cpu, t_pid, (void *) vmf->address, nid, folio_nr_pages(folio), folio_size_kb, folio_start_in_vma, (void *) vma->vm_start, (void *) vma->vm_end, vma_size_kb
-		// 	);
-		// }
+		if (static_branch_unlikely(&sched_trace_nb_memory_migration)) {
+			int t_pid =  current->pid;
+			int t_cpu = raw_smp_processor_id();
+			int t_nid = cpu_to_node(t_cpu);
+			void* folio_physical_address = (void *) virt_to_phys(folio_address(folio));
+
+			trace_printk(
+				"NUMAB COMPLETED MEM MIGR process[nid:%d, cpu:%d, pid:%d], old[phys:%p, nid:%d, npages:%d], new[phys:%p, nid:%d, npages:%ld]\n", 
+				t_nid, t_cpu, t_pid, 
+				folio_old_physical_address, folio_old_nid, folio_old_npages, 
+				folio_physical_address, folio_nid(folio), folio_nr_pages(folio)
+				
+			);
+		}
 	} else {
 		flags |= TNF_MIGRATE_FAIL;
 		vmf->pte = pte_offset_map_lock(vma->vm_mm, vmf->pmd,
