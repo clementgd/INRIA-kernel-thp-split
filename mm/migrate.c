@@ -2564,6 +2564,8 @@ int migrate_misplaced_folio(struct folio *folio, struct vm_area_struct *vma,
 	unsigned int nr_succeeded;
 	LIST_HEAD(migratepages);
 	int nr_pages = folio_nr_pages(folio);
+	void* folio_initial_physical_address = (void *) virt_to_phys(folio_address(folio));
+	int folio_initial_nid = folio_nid(folio);
 
 	/*
 	 * Don't migrate file folios that are mapped in multiple processes
@@ -2619,7 +2621,16 @@ int migrate_misplaced_folio(struct folio *folio, struct vm_area_struct *vma,
 					    nr_succeeded);
 		
 		if (static_branch_unlikely(&sched_trace_nb_memory_migration)) {
-			trace_printk("NUMAB pid:%d COMPLETED MEM MIGR of %u pages\n", current->pid, nr_succeeded);
+			int t_pid = current->pid;
+			int t_cpu = raw_smp_processor_id();
+			int t_nid = cpu_to_node(t_cpu);
+			void* folio_physical_address = (void *) virt_to_phys(folio_address(folio));
+			trace_printk(
+				"NUMAB COMPLETED MEM MIGR process[nid:%d, cpu:%d, pid:%d], old[phys:%p, nid:%d], new[phys:%p, nid:%d] npages:%lu/%lu\n", 
+				t_nid, t_cpu, t_pid, 
+				nr_succeeded, folio_initial_physical_address, folio_initial_nid, folio_physical_address, folio_nid(folio), 
+				nr_succeeded, nr_pages
+			);
 		}
 	}
 	BUG_ON(!list_empty(&migratepages));
