@@ -5,6 +5,6 @@ function pause(){
     echo ""
 }
 
-source build
+source build.sh
 pause
-source deploy
+source deploy.sh

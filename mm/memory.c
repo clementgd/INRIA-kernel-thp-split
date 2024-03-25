@@ -5068,13 +5068,15 @@ static vm_fault_t do_numa_page(struct vm_fault *vmf)
 			int t_pid =  current->pid;
 			int t_cpu = raw_smp_processor_id();
 			int t_nid = cpu_to_node(t_cpu);
-			void* folio_physical_address = (void *) virt_to_phys(folio_address(folio));
+			// void* folio_physical_address = (void *) virt_to_phys(folio_address(folio));
+			struct page* new_page = follow_page(vma, vmf->address, FOLL_GET | FOLL_DUMP);
+			void* folio_new_physical_address = virt_to_phys(page_address(new_page));
 
 			trace_printk(
 				"NUMAB COMPLETED MEM MIGR process[nid:%d, cpu:%d, pid:%d], old[phys:%p, nid:%d, npages:%d], new[phys:%p, nid:%d, npages:%ld]\n", 
 				t_nid, t_cpu, t_pid, 
 				folio_old_physical_address, folio_old_nid, folio_old_npages, 
-				folio_physical_address, folio_nid(folio), folio_nr_pages(folio)
+				folio_new_physical_address, nid, folio_nr_pages(folio)
 				
 			);
 		}
