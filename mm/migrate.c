@@ -2558,16 +2558,6 @@ static int numamigrate_isolate_folio(pg_data_t *pgdat, struct folio *folio)
 int migrate_misplaced_folio(struct folio *folio, struct vm_area_struct *vma,
 			    int node)
 {
-	if (static_branch_unlikely(&sched_trace_nb_memory_migration)) {
-		unsigned long vma_size_kb = (vma->vm_end - vma->vm_start) >> 10;
-		unsigned long folio_size_kb = folio_size(folio) >> 10;
-		unsigned int folio_start_in_vma = ((unsigned long) folio_address(folio) - vma->vm_start) * 1000 / (vma->vm_end - vma->vm_start);
-		trace_printk(
-			"NUMAB TRY MEM MIGR folio[addr:%p, nid:%d. pages:%lu, size:%lu KB, pos:%u/1000], vma[start:%p, end:%p, size:%luKB]\n", 
-			folio_address(folio), node, folio_nr_pages(folio), folio_size_kb, folio_start_in_vma, (void *) vma->vm_start, (void *) vma->vm_end, vma_size_kb
-		);
-	}
-
 	pg_data_t *pgdat = NODE_DATA(node);
 	int isolated;
 	int nr_remaining;
@@ -2585,7 +2575,7 @@ int migrate_misplaced_folio(struct folio *folio, struct vm_area_struct *vma,
 	if (folio_estimated_sharers(folio) != 1 && folio_is_file_lru(folio) &&
 	    (vma->vm_flags & VM_EXEC)) {
 		if (static_branch_unlikely(&sched_trace_nb_memory_migration)) {
-			trace_printk("NUMAB ABORTING MEM MIGR because folio seems to be shared lib");
+			trace_printk("NUMAB pid:%d ABORTING MEM MIGR because folio seems to be shared lib", current->pid);
 		}
 		goto out;
 	}
@@ -2600,7 +2590,7 @@ int migrate_misplaced_folio(struct folio *folio, struct vm_area_struct *vma,
 	isolated = numamigrate_isolate_folio(pgdat, folio);
 	if (!isolated) {
 		if (static_branch_unlikely(&sched_trace_nb_memory_migration)) {
-			trace_printk("NUMAB ABORTING MEM MIGR because !isolated");
+			trace_printk("NUMAB pid:%d ABORTING MEM MIGR because !isolated", current->pid);
 		}
 		goto out;
 	}
@@ -2619,7 +2609,7 @@ int migrate_misplaced_folio(struct folio *folio, struct vm_area_struct *vma,
 		isolated = 0;
 
 		if (static_branch_unlikely(&sched_trace_nb_memory_migration)) {
-			trace_printk("NUMAB ABORTED MEM MIGR because nr_remaining");
+			trace_printk("NUMAB pid:%d ABORTED MEM MIGR because nr_remaining", current->pid);
 		}
 	}
 	if (nr_succeeded) {
@@ -2629,7 +2619,7 @@ int migrate_misplaced_folio(struct folio *folio, struct vm_area_struct *vma,
 					    nr_succeeded);
 		
 		if (static_branch_unlikely(&sched_trace_nb_memory_migration)) {
-			trace_printk("NUMAB COMPLETED MEM MIGR of %u pages\n", nr_succeeded);
+			trace_printk("NUMAB pid:%d COMPLETED MEM MIGR of %u pages\n", current->pid, nr_succeeded);
 		}
 	}
 	BUG_ON(!list_empty(&migratepages));

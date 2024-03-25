@@ -4998,22 +4998,38 @@ static vm_fault_t do_numa_page(struct vm_fault *vmf)
 	else
 		last_cpupid = folio_last_cpupid(folio);
 
+	// int t_pid = current->pid;
+	// int t_cpu = raw_smp_processor_id();
+	// int t_nid = cpu_to_node(t_cpu);
+	// unsigned long vma_size_kb = (vma->vm_end - vma->vm_start) >> 10;
+	// unsigned long folio_size_kb = folio_size(folio) >> 10;
+	// unsigned int folio_start_in_vma = (vmf->address - vma->vm_start) * 1000 / (vma->vm_end - vma->vm_start);
+	// void *folio_kernel_address = folio_address(folio);
+	// void* folio_physical_address = (void *) virt_to_phys(folio_kernel_address);
+	// trace_printk(
+	// 	"NUMAB MEM ACCESS process[nid:%d, cpu:%d, pid:%d], vmf[addr:%p, real_addr:%p], folio[kaddr:%p, paddr:%p, pointer:%p, page_pointer:%p, is_hm:%d, nid:%d, pages:%lu, size:%lu KB, pos:%u/1000], vma[start:%p, end:%p, size:%lu KB]\n", 
+	// 	t_nid, t_cpu, t_pid, 
+	// 	(void *) vmf->address, (void *) vmf->real_address, 
+	// 	folio_kernel_address, folio_physical_address, (void *) folio, &folio->page, PageHighMem(&folio->page), nid, folio_nr_pages(folio), folio_size_kb, folio_start_in_vma,
+	// 	(void *) vma->vm_start, (void *) vma->vm_end, vma_size_kb
+	// );
+
+	// TODO in numa init function, print once the PAGE_OFFSET / PAGE_MAP if memory access tracing is enabled
+	// And also the page size
 	if (static_branch_unlikely(&sched_trace_nb_memory_access)) {
-		int task_pid = current->pid;
-		int task_cpu = raw_smp_processor_id();
-		int task_nid = cpu_to_node(task_cpu);
-		unsigned long vma_size_kb = (vma->vm_end - vma->vm_start) >> 10;
-		unsigned long folio_size_kb = folio_size(folio) >> 10;
-		unsigned int folio_start_in_vma = (vmf->address - vma->vm_start) * 1000 / (vma->vm_end - vma->vm_start);
-		void *folio_kernel_address = folio_address(folio);
-		void* folio_physical_address = (void *) virt_to_phys(folio_kernel_address);
+		
 		// WANT_PAGE_VIRTUAL is disabled on x86, see https://stackoverflow.com/questions/6190353/question-about-the-implementation-of-page-address
+		int t_pid = current->pid;
+		int t_cpu = task_cpu(current);
+		int t_nid = cpu_to_node(t_cpu);
+		unsigned long pfn = pte_pfn(pte);
+		void* folio_process_address = (void *) vmf->real_address;
+		void* folio_kernel_address = folio_address(folio);
+		void* folio_physical_address = (void *) virt_to_phys(folio_kernel_address);
 		trace_printk(
-			"NUMAB MEM ACCESS process[nid:%d, cpu:%d, pid:%d], vmf[addr:%p, real_addr:%p], folio[kaddr:%p, paddr:%p, pointer:%p, page_pointer:%p, is_hm:%d, nid:%d, pages:%lu, size:%lu KB, pos:%u/1000], vma[start:%p, end:%p, size:%lu KB]\n", 
-			task_nid, task_cpu, task_pid, 
-			(void *) vmf->address, (void *) vmf->real_address, 
-			folio_kernel_address, folio_physical_address, (void *) folio, &folio->page, PageHighMem(&folio->page), nid, folio_nr_pages(folio), folio_size_kb, folio_start_in_vma,
-			(void *) vma->vm_start, (void *) vma->vm_end, vma_size_kb
+			"NUMAB MEM ACCESS process[nid:%d, cpu:%d, pid:%d], folio[virt:%p, phys:%p, pfn:%p, nid:%d, npages:%lu]\n", 
+			t_nid, t_cpu, t_pid, 
+			folio_process_address, folio_physical_address, (void *) pfn, nid, folio_nr_pages(folio)
 		);
 	}
 
@@ -5025,23 +5041,37 @@ static vm_fault_t do_numa_page(struct vm_fault *vmf)
 	pte_unmap_unlock(vmf->pte, vmf->ptl);
 	writable = false;
 
+	if (static_branch_unlikely(&sched_nb_memory_migration)) {
+		int t_pid = current->pid;
+		int t_cpu = raw_smp_processor_id();
+		int t_nid = cpu_to_node(t_cpu);
+		void* folio_process_address = (void *) vmf->real_address;
+		void* folio_kernel_address = folio_address(folio);
+		void* folio_physical_address = (void *) virt_to_phys(folio_kernel_address);
+		trace_printk(
+			"NUMAB TRY MEM MIGR process[nid:%d, cpu:%d, pid:%d], folio[virt:%p, phys:%p, nid:%d], target_nid:%d\n", 
+			t_nid, t_cpu, t_pid, 
+			folio_process_address, folio_physical_address, nid, target_nid
+		);
+	}
+
 	/* Migrate to the requested node */
 	if (migrate_misplaced_folio(folio, vma, target_nid)) {
 		nid = target_nid;
 		flags |= TNF_MIGRATED;
 
-		if (static_branch_unlikely(&sched_trace_nb_memory_migration)) {
-			int task_pid =  current->pid;
-			int task_cpu = raw_smp_processor_id();
-			int task_nid = cpu_to_node(task_cpu);
-			unsigned long vma_size_kb = (vma->vm_end - vma->vm_start) >> 10;
-			unsigned long folio_size_kb = folio_size(folio) >> 10;
-			unsigned int folio_start_in_vma = (vmf->address - vma->vm_start) * 1000 / (vma->vm_end - vma->vm_start);
-			trace_printk(
-				"NUMAB MEM MIGRATED process[nid:%d, cpu:%d, pid:%d], folio[addr:%p, nid:%d. pages:%lu, size:%lu KB, pos:%u/1000], vma[start:%p, end:%p, size:%luKB]\n", 
-				task_nid, task_cpu, task_pid, (void *) vmf->address, nid, folio_nr_pages(folio), folio_size_kb, folio_start_in_vma, (void *) vma->vm_start, (void *) vma->vm_end, vma_size_kb
-			);
-		}
+		// if (static_branch_unlikely(&sched_trace_nb_memory_migration)) {
+		// 	int t_pid =  current->pid;
+		// 	int t_cpu = raw_smp_processor_id();
+		// 	int t_nid = cpu_to_node(t_cpu);
+		// 	unsigned long vma_size_kb = (vma->vm_end - vma->vm_start) >> 10;
+		// 	unsigned long folio_size_kb = folio_size(folio) >> 10;
+		// 	unsigned int folio_start_in_vma = (vmf->address - vma->vm_start) * 1000 / (vma->vm_end - vma->vm_start);
+		// 	trace_printk(
+		// 		"NUMAB MEM MIGRATED process[nid:%d, cpu:%d, pid:%d], folio[addr:%p, nid:%d. pages:%lu, size:%lu KB, pos:%u/1000], vma[start:%p, end:%p, size:%luKB]\n", 
+		// 		t_nid, t_cpu, t_pid, (void *) vmf->address, nid, folio_nr_pages(folio), folio_size_kb, folio_start_in_vma, (void *) vma->vm_start, (void *) vma->vm_end, vma_size_kb
+		// 	);
+		// }
 	} else {
 		flags |= TNF_MIGRATE_FAIL;
 		vmf->pte = pte_offset_map_lock(vma->vm_mm, vmf->pmd,
