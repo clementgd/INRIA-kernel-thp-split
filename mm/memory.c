@@ -5069,7 +5069,7 @@ static vm_fault_t do_numa_page(struct vm_fault *vmf)
 			int t_nid = cpu_to_node(t_cpu);
 			// void* folio_physical_address = (void *) virt_to_phys(folio_address(folio));
 			struct page* new_page = follow_page(vma, vmf->address, FOLL_GET | FOLL_DUMP);
-			void* folio_new_physical_address = virt_to_phys(page_address(new_page));
+			void* folio_new_physical_address = (void *) virt_to_phys(page_address(new_page));
 
 			// I haven't yet found a way to retrieve the new physical address
 			trace_printk(
