@@ -1762,13 +1762,14 @@ vm_fault_t do_huge_pmd_numa_page(struct vm_fault *vmf)
 		int t_pid = current->pid;
 		int t_cpu = task_cpu(current);
 		int t_nid = cpu_to_node(t_cpu);
+		unsigned long pfn = pmd_pfn(pmd);
 		void* folio_process_address = (void *) vmf->real_address;
 		void* folio_kernel_address = folio_address(folio);
-		void* folio_physical_address = (void *) virt_to_phys(folio_kernel_address);
+		// void* folio_physical_address = (void *) virt_to_phys(folio_kernel_address);
 		trace_printk(
-			"NUMAB MEM ACCESS huge page process[nid:%d, cpu:%d, pid:%d], folio[virt:%p, phys:%p, nid:%d, npages:%lu]\n", 
+			"NUMAB MEM ACCESS huge page process[nid:%d, cpu:%d, pid:%d], folio[virt:%p, ker:%p, pfn:%p, nid:%d, npages:%lu]\n", 
 			t_nid, t_cpu, t_pid, 
-			folio_process_address, folio_physical_address, nid, folio_nr_pages(folio)
+			folio_process_address, folio_kernel_address, (void *) pfn, nid, folio_nr_pages(folio)
 		);
 	}
 
