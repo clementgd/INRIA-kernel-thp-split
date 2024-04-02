@@ -4957,10 +4957,6 @@ static vm_fault_t do_numa_page(struct vm_fault *vmf)
 	    can_change_pte_writable(vma, vmf->address, pte))
 		writable = true;
 
-	if (!static_branch_likely(&sched_nb_memory_migration))
-		goto out_map;
-		
-
 	folio = vm_normal_folio(vma, vmf->address, pte);
 	if (!folio || folio_is_zone_device(folio))
 		goto out_map;
@@ -5033,6 +5029,9 @@ static vm_fault_t do_numa_page(struct vm_fault *vmf)
 		);
 	}
 
+	if (!static_branch_likely(&sched_nb_memory_migration))
+		goto out_map;
+
 	target_nid = numa_migrate_prep(folio, vma, vmf->address, nid, &flags);
 	if (target_nid == NUMA_NO_NODE) {
 		folio_put(folio);
@@ -5045,7 +5044,7 @@ static vm_fault_t do_numa_page(struct vm_fault *vmf)
 	int folio_old_nid = nid;
 	int folio_old_npages = folio_nr_pages(folio);
 
-	if (static_branch_unlikely(&sched_nb_memory_migration)) {
+	if (static_branch_unlikely(&sched_trace_nb_memory_migration)) {
 		int t_pid = current->pid;
 		int t_cpu = raw_smp_processor_id();
 		int t_nid = cpu_to_node(t_cpu);
@@ -5072,6 +5071,7 @@ static vm_fault_t do_numa_page(struct vm_fault *vmf)
 			struct page* new_page = follow_page(vma, vmf->address, FOLL_GET | FOLL_DUMP);
 			void* folio_new_physical_address = virt_to_phys(page_address(new_page));
 
+			// I haven't yet found a way to retrieve the new physical address
 			trace_printk(
 				"NUMAB COMPLETED MEM MIGR process[nid:%d, cpu:%d, pid:%d], old[phys:%p, nid:%d, npages:%d], new[phys:%p, nid:%d, npages:%ld]\n", 
 				t_nid, t_cpu, t_pid, 

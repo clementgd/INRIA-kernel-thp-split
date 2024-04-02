@@ -1742,9 +1742,6 @@ vm_fault_t do_huge_pmd_numa_page(struct vm_fault *vmf)
 	    can_change_pmd_writable(vma, vmf->address, pmd))
 		writable = true;
 
-	if (!static_branch_likely(&sched_nb_memory_migration))
-		goto out_map;
-
 	folio = vm_normal_folio_pmd(vma, haddr, pmd);
 	if (!folio)
 		goto out_map;
@@ -1760,6 +1757,25 @@ vm_fault_t do_huge_pmd_numa_page(struct vm_fault *vmf)
 	 */
 	if (node_is_toptier(nid))
 		last_cpupid = folio_last_cpupid(folio);
+
+	if (static_branch_unlikely(&sched_trace_nb_memory_access)) {
+		int t_pid = current->pid;
+		int t_cpu = task_cpu(current);
+		int t_nid = cpu_to_node(t_cpu);
+		unsigned long pfn = pte_pfn(pte);
+		void* folio_process_address = (void *) vmf->real_address;
+		void* folio_kernel_address = folio_address(folio);
+		void* folio_physical_address = (void *) virt_to_phys(folio_kernel_address);
+		trace_printk(
+			"NUMAB MEM ACCESS huge page process[nid:%d, cpu:%d, pid:%d], folio[virt:%p, phys:%p, pfn:%p, nid:%d, npages:%lu]\n", 
+			t_nid, t_cpu, t_pid, 
+			folio_process_address, folio_physical_address, (void *) pfn, nid, folio_nr_pages(folio)
+		);
+	}
+
+	if (!static_branch_likely(&sched_nb_memory_migration))
+		goto out_map;
+
 	target_nid = numa_migrate_prep(folio, vma, haddr, nid, &flags);
 	if (target_nid == NUMA_NO_NODE) {
 		folio_put(folio);
