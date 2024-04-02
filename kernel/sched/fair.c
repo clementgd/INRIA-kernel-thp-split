@@ -3430,6 +3430,8 @@ out:
 	if (unlikely(p->se.sum_exec_runtime != runtime)) {
 		u64 diff = p->se.sum_exec_runtime - runtime;
 		p->node_stamp += 32 * diff;
+
+		trace_printk("NUMAB task_numa_work took approx %llu nanos. node_stamp is now : %llu", diff, p->node_stamp);
 	}
 }
 
@@ -3504,6 +3506,9 @@ static void task_tick_numa(struct rq *rq, struct task_struct *curr)
 	period = (u64)curr->numa_scan_period * NSEC_PER_MSEC;
 
 	if (now > curr->node_stamp + period) {
+
+		trace_printk("NUMAB node_stamp = %llu, period = %lld", curr->node_stamp, period);
+
 		if (!curr->node_stamp)
 			curr->numa_scan_period = task_scan_start(curr);
 		curr->node_stamp += period;
