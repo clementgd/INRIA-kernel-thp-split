@@ -2621,7 +2621,7 @@ static void update_task_scan_period(struct task_struct *p,
 			p->numa_scan_period << 1);
 
 		p->mm->numa_next_scan = jiffies +
-			msecs_to_jiffies(p->numa_scan_period);
+			msecs_to_jiffies(sysctl_numa_balancing_scan_period_max);
 
 		return;
 	}
@@ -3221,22 +3221,24 @@ static void task_numa_work(struct callback_head *work)
 
 	if (!mm->numa_next_scan) {
 		mm->numa_next_scan = now +
-			msecs_to_jiffies(sysctl_numa_balancing_scan_delay);
+			msecs_to_jiffies(sysctl_numa_balancing_scan_period_max);
 	}
 
 	/*
 	 * Enforce maximal scan/migration frequency..
 	 */
 	migrate = mm->numa_next_scan;
-	if (time_before(now, migrate))
+	if (time_before(now, migrate)) {
+		trace_printk("NUMAB Exited task_numa_work because migration time has not arrived yet");
 		return;
+	}
 
 	if (p->numa_scan_period == 0) {
 		p->numa_scan_period_max = task_scan_max(p);
 		p->numa_scan_period = task_scan_start(p);
 	}
 
-	next_scan = now + msecs_to_jiffies(p->numa_scan_period);
+	next_scan = now + msecs_to_jiffies(sysctl_numa_balancing_scan_period_max);
 	if (!try_cmpxchg(&mm->numa_next_scan, &migrate, next_scan))
 		return;
 
@@ -3264,6 +3266,7 @@ static void task_numa_work(struct callback_head *work)
 	vma_pids_skipped = false;
 
 retry_pids:
+	trace_printk("NUMAB About to scan memory");
 	start = mm->numa_scan_offset;
 	vma_iter_init(&vmi, mm, start);
 	vma = vma_next(&vmi);
@@ -3505,16 +3508,20 @@ static void task_tick_numa(struct rq *rq, struct task_struct *curr)
 	now = curr->se.sum_exec_runtime;
 	period = (u64)curr->numa_scan_period * NSEC_PER_MSEC;
 
-	if (now > curr->node_stamp + period) {
+	if (1 || now > curr->node_stamp + period) {
 
-		trace_printk("NUMAB node_stamp = %llu, period = %lld", curr->node_stamp, period);
+		// trace_printk("NUMAB node_stamp = %llu, period = %lld", curr->node_stamp, period);
 
 		if (!curr->node_stamp)
 			curr->numa_scan_period = task_scan_start(curr);
 		curr->node_stamp += period;
 
-		if (!time_before(jiffies, curr->mm->numa_next_scan))
+		if (!time_before(jiffies, curr->mm->numa_next_scan)) {
+			// trace_printk("NUMAB adding scan work");
 			task_work_add(curr, work, TWA_RESUME);
+		} else {
+			// trace_printk("NUMAB Too early to add scan work : jiffies = %lu, next_numa_scan = %lu", jiffies, curr->mm->numa_next_scan);
+		}
 	}
 }
 
