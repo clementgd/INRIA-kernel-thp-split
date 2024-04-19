@@ -5023,9 +5023,12 @@ static vm_fault_t do_numa_page(struct vm_fault *vmf)
 		void* folio_kernel_address = folio_address(folio);
 		void* folio_physical_address = (void *) virt_to_phys(folio_kernel_address);
 		trace_printk(
-			"NUMAB MEM ACCESS process[nid:%d, cpu:%d, pid:%d], folio[virt:%p, phys:%p, pfn:%p, nid:%d, npages:%lu]\n", 
+			"NUMAB MEM ACCESS process[nid:%d, cpu:%d, pid:%d], folio[virt:%px|%lx, phys:%px|%lx, pfn:%px|%lx, nid:%d, npages:%lu]\n", 
 			t_nid, t_cpu, t_pid, 
-			folio_process_address, folio_physical_address, (void *) pfn, nid, folio_nr_pages(folio)
+			folio_process_address, (unsigned long) folio_process_address,
+			folio_physical_address, (unsigned long) folio_physical_address, 
+			(void *) pfn, pfn,
+			nid, folio_nr_pages(folio)
 		);
 	}
 
