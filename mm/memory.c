@@ -5054,6 +5054,8 @@ int numa_migrate_prep(struct folio *folio, struct vm_area_struct *vma,
 
 static vm_fault_t do_numa_page(struct vm_fault *vmf)
 {
+	// trace_printk("Entered do_numa_page");
+
 	struct vm_area_struct *vma = vmf->vma;
 	struct folio *folio = NULL;
 	int nid = NUMA_NO_NODE;
@@ -5092,8 +5094,10 @@ static vm_fault_t do_numa_page(struct vm_fault *vmf)
 		goto out_map;
 
 	/* TODO: handle PTE-mapped THP */
-	if (folio_test_large(folio))
+	if (folio_test_large(folio)) {
+		trace_printk("do_numa_page with huge page. How is it possible ?");
 		goto out_map;
+	}
 
 	/*
 	 * Avoid grouping on RO pages in general. RO pages shouldn't hurt as
