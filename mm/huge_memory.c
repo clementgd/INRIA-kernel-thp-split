@@ -1822,7 +1822,7 @@ fallback:
 	trace_printk("INFO SPLIT : Before __split_huge_pmd");
 	__split_huge_pmd(vma, vmf->pmd, vmf->address, false, NULL);
 	trace_printk("INFO SPLIT : After __split_huge_pmd");
-	return VM_FAULT_FALLBACK;
+	return handle_pte_fault(&vmf);;
 }
 
 /*

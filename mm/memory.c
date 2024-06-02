@@ -5287,10 +5287,15 @@ static vm_fault_t handle_pte_fault(struct vm_fault *vmf)
 		 * mode; but shmem or file collapse to THP could still morph
 		 * it into a huge pmd: just retry later if so.
 		 */
+		// TODO Clem log before and after to see if smth weird happens
+		trace_printk("Before pte_offset_map_nolock");
 		vmf->pte = pte_offset_map_nolock(vmf->vma->vm_mm, vmf->pmd,
 						 vmf->address, &vmf->ptl);
-		if (unlikely(!vmf->pte))
+		trace_printk("After pte_offset_map_nolock");
+		if (unlikely(!vmf->pte)) {
+			trace_printk("Actually pte is 0");
 			return 0;
+		}
 		vmf->orig_pte = ptep_get_lockless(vmf->pte);
 		vmf->flags |= FAULT_FLAG_ORIG_PTE_VALID;
 
