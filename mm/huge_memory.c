@@ -1725,7 +1725,7 @@ vm_fault_t do_huge_pmd_numa_page(struct vm_fault *vmf)
 	int target_nid, last_cpupid = (-1 & LAST_CPUPID_MASK);
 	bool migrated = false, writable = false;
 	int flags = 0;
-	bool should_split = false;
+	// bool should_split = false;
 
 	vmf->ptl = pmd_lock(vma->vm_mm, vmf->pmd);
 	if (unlikely(!pmd_same(oldpmd, *vmf->pmd))) {
@@ -1772,9 +1772,9 @@ vm_fault_t do_huge_pmd_numa_page(struct vm_fault *vmf)
 		// TODO Clem Make sure cpupid_to_nid can handle invalid last_cpuid
 		if (!cpupid_cpu_unset(last_cpupid) && cpupid_to_nid(last_cpupid) != this_nid) {
 			trace_printk("Current nid (%d) is different from last nid (%d). Last cpuid : %d", this_nid, cpupid_to_nid(last_cpupid), last_cpupid);
-			should_split = true;
+			// should_split = true;
 			folio_put(folio);
-			goto out_map;
+			goto fallback;
 		}
 	}
 
@@ -1816,16 +1816,13 @@ out_map:
 	set_pmd_at(vma->vm_mm, haddr, vmf->pmd, pmd);
 	update_mmu_cache_pmd(vma, vmf->address, vmf->pmd);
 	spin_unlock(vmf->ptl);
+	goto out;
 
-	// Splitting :
-	if (!should_split)
-		goto out;
-
-	trace_printk("INFO SPLIT : About to split folio");
-
-	split_huge_pmd(vmf->vma, vmf->pmd, vmf->address);
-	// TODO Test and see if issue if no call to task_numa_fault
-	return 0;
+fallback:
+	trace_printk("INFO SPLIT : Before __split_huge_pmd");
+	__split_huge_pmd(vma, vmf->pmd, vmf->address, false, NULL);
+	trace_printk("INFO SPLIT : After __split_huge_pmd");
+	return VM_FAULT_FALLBACK;
 }
 
 /*
