@@ -5267,7 +5267,7 @@ split:
  * The mmap_lock may have been released depending on flags and our return value.
  * See filemap_fault() and __folio_lock_or_retry().
  */
-static vm_fault_t handle_pte_fault(struct vm_fault *vmf)
+vm_fault_t handle_pte_fault(struct vm_fault *vmf)
 {
 	pte_t entry;
 
