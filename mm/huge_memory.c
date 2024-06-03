@@ -1794,7 +1794,7 @@ vm_fault_t do_huge_pmd_numa_page(struct vm_fault *vmf)
 				trace_printk("WARNING SPLIT : folio_test_large() returned FALSE");
 				goto next;
 			} else {
-				trace_printk("WARNING SPLIT : folio_test_large() returned TRUE");
+				trace_printk("INFO SPLIT : folio_test_large() returned TRUE");
 			}
 
 			/*
@@ -1811,12 +1811,14 @@ vm_fault_t do_huge_pmd_numa_page(struct vm_fault *vmf)
 			if (!folio_trylock(folio)) {
 				trace_printk("ERROR SPLIT : Cannot lock folio, exiting");
 				goto next;
+			} else {
+				trace_printk("INFO SPLIT : Got lock on folio");
 			}
 
 			// TODO Put it back at the top but relock in cases with goto ?
 			spin_unlock(vmf->ptl);
 			if (!split_folio(folio)) {
-				trace_printk("Folio successfully splitted !");
+				trace_printk("Folio successfully splitted ! Refcount : %d, mapcount : %d", folio_ref_count(folio), folio_mapcount(folio));
 				folio_unlock(folio);
 				folio_put(folio);
 				return handle_pte_fault(vmf);
@@ -1838,6 +1840,7 @@ next:
 	spin_unlock(vmf->ptl);
 	writable = false;
 
+	trace_printk("INFO do_huge_pmd_numa_page : calling migrate_misplaced_folio");
 	migrated = migrate_misplaced_folio(folio, vma, target_nid);
 	if (migrated) {
 		flags |= TNF_MIGRATED;

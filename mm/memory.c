@@ -5090,12 +5090,14 @@ static vm_fault_t do_numa_page(struct vm_fault *vmf)
 		writable = true;
 
 	folio = vm_normal_folio(vma, vmf->address, pte);
-	if (!folio || folio_is_zone_device(folio))
+	if (!folio || folio_is_zone_device(folio)) {
+		trace_printk("ERROR : do_numa_page with invalid folio");
 		goto out_map;
+	}
 
 	/* TODO: handle PTE-mapped THP */
 	if (folio_test_large(folio)) {
-		trace_printk("do_numa_page with huge page. How is it possible ?");
+		trace_printk("ERROR : do_numa_page with huge page. How is it possible ?");
 		goto out_map;
 	}
 
@@ -5293,9 +5295,10 @@ vm_fault_t handle_pte_fault(struct vm_fault *vmf)
 						 vmf->address, &vmf->ptl);
 		// trace_printk("After pte_offset_map_nolock");
 		if (unlikely(!vmf->pte)) {
-			trace_printk("Actually pte is 0");
+			trace_printk("ERROR : Actually pte is 0");
 			return 0;
 		}
+
 		vmf->orig_pte = ptep_get_lockless(vmf->pte);
 		vmf->flags |= FAULT_FLAG_ORIG_PTE_VALID;
 
