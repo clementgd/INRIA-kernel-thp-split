@@ -1772,12 +1772,58 @@ vm_fault_t do_huge_pmd_numa_page(struct vm_fault *vmf)
 		// TODO Clem Make sure cpupid_to_nid can handle invalid last_cpuid
 		if (!cpupid_cpu_unset(last_cpupid) && cpupid_to_nid(last_cpupid) != this_nid) {
 			trace_printk("Current nid (%d) is different from last nid (%d). Last cpuid : %d", this_nid, cpupid_to_nid(last_cpupid), last_cpupid);
-			// should_split = true;
+			
+			// TODO remove ?
+			spin_unlock(vmf->ptl);
+
+			// if (vma_not_suitable_for_thp_split(vma)) {
+			// 	// goto out;
+			// 	trace_printk("WARNING SPLIT : vma not suitable for thp split");
+			// }
+
+			if (folio == NULL) {
+				trace_printk("WARNING SPLIT : folio is NULL");
+			}
+
+			/* FOLL_DUMP to ignore special (like zero) pages */
+			if (!is_transparent_hugepage(folio)) {
+				trace_printk("WARNING SPLIT : is_transparent_hugepage() returned false");
+				// goto next;
+			}
+			if (!folio_test_large(folio)) {
+				trace_printk("WARNING SPLIT : folio_test_large() returned false");
+				// goto next;
+			}
+
+			/*
+				* For folios with private, split_huge_page_to_list_to_order()
+				* will try to drop it before split and then check if the folio
+				* can be split or not. So skip the check here.
+				*/
+			if (!folio_test_private(folio) &&
+				!can_split_folio(folio, NULL)) {
+				trace_printk("ERROR SPLIT : Cannot split folio");
+				// goto next;
+			}
+
+			if (!folio_trylock(folio)) {
+				trace_printk("ERROR SPLIT : Cannot lock folio, exiting");
+				goto next;
+			}
+
+			if (!split_folio(folio)) {
+				trace_printk("Folio successfully splitted !");
+			} else {
+				trace_printk("split_folio failed");
+			}
+
+			folio_unlock(folio);
 			folio_put(folio);
-			goto fallback;
+			return handle_pte_fault(vmf);
 		}
 	}
 
+next:
 	target_nid = numa_migrate_prep(folio, vma, haddr, nid, &flags);
 	if (target_nid == NUMA_NO_NODE) {
 		folio_put(folio);
@@ -1818,11 +1864,12 @@ out_map:
 	spin_unlock(vmf->ptl);
 	goto out;
 
-fallback:
-	trace_printk("INFO SPLIT : Before __split_huge_pmd");
-	__split_huge_pmd(vma, vmf->pmd, vmf->address, false, NULL);
-	trace_printk("INFO SPLIT : After __split_huge_pmd");
-	return handle_pte_fault(vmf);
+// fallback:
+// 	// trace_printk("INFO SPLIT : Before __split_huge_pmd");
+// 	// __split_huge_pmd(vma, vmf->pmd, vmf->address, false, NULL);
+// 	// trace_printk("INFO SPLIT : After __split_huge_pmd");
+
+// 	return handle_pte_fault(vmf);
 }
 
 /*
