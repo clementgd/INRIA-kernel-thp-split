@@ -1774,7 +1774,7 @@ vm_fault_t do_huge_pmd_numa_page(struct vm_fault *vmf)
 			trace_printk("Current nid (%d) is different from last nid (%d). Last cpuid : %d. Refcount : %d, mapcount : %d", this_nid, cpupid_to_nid(last_cpupid), last_cpupid, folio_ref_count(folio), folio_mapcount(folio));
 			
 			// TODO remove ?
-			spin_unlock(vmf->ptl);
+			// spin_unlock(vmf->ptl);
 
 			// if (vma_not_suitable_for_thp_split(vma)) {
 			// 	// goto out;
@@ -1783,18 +1783,21 @@ vm_fault_t do_huge_pmd_numa_page(struct vm_fault *vmf)
 
 			if (folio == NULL) {
 				trace_printk("WARNING SPLIT : folio is NULL");
+				goto next;
 			}
 
 			/* FOLL_DUMP to ignore special (like zero) pages */
 			if (!is_transparent_hugepage(folio)) {
-				// trace_printk("WARNING SPLIT : is_transparent_hugepage() returned false");
+				trace_printk("WARNING SPLIT : is_transparent_hugepage() returned FALSE");
 				// goto next;
 			} else {
-				trace_printk("INFO SPLIT : is_transparent_hugepage() returned true");
+				trace_printk("INFO SPLIT : is_transparent_hugepage() returned TRUE");
 			}
 			if (!folio_test_large(folio)) {
-				trace_printk("WARNING SPLIT : folio_test_large() returned false");
-				// goto next;
+				trace_printk("WARNING SPLIT : folio_test_large() returned FALSE");
+				goto next;
+			} else {
+				trace_printk("WARNING SPLIT : folio_test_large() returned TRUE");
 			}
 
 			/*
@@ -1805,7 +1808,7 @@ vm_fault_t do_huge_pmd_numa_page(struct vm_fault *vmf)
 			if (!folio_test_private(folio) &&
 				!can_split_folio(folio, NULL)) {
 				trace_printk("ERROR SPLIT : Cannot split folio");
-				// goto next;
+				goto next;
 			}
 
 			if (!folio_trylock(folio)) {
@@ -1815,13 +1818,13 @@ vm_fault_t do_huge_pmd_numa_page(struct vm_fault *vmf)
 
 			if (!split_folio(folio)) {
 				trace_printk("Folio successfully splitted !");
+				folio_unlock(folio);
+				folio_put(folio);
+				return handle_pte_fault(vmf);
 			} else {
 				trace_printk("split_folio failed");
+				folio_unlock(folio);
 			}
-
-			folio_unlock(folio);
-			folio_put(folio);
-			return handle_pte_fault(vmf);
 		}
 	}
 
