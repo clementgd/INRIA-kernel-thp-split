@@ -1773,9 +1773,6 @@ vm_fault_t do_huge_pmd_numa_page(struct vm_fault *vmf)
 		if (!cpupid_cpu_unset(last_cpupid) && cpupid_to_nid(last_cpupid) != this_nid) {
 			trace_printk("Current nid (%d) is different from last nid (%d). Last cpuid : %d. Refcount : %d, mapcount : %d", this_nid, cpupid_to_nid(last_cpupid), last_cpupid, folio_ref_count(folio), folio_mapcount(folio));
 			
-			// TODO remove ?
-			spin_unlock(vmf->ptl);
-
 			// if (vma_not_suitable_for_thp_split(vma)) {
 			// 	// goto out;
 			// 	trace_printk("WARNING SPLIT : vma not suitable for thp split");
@@ -1816,6 +1813,8 @@ vm_fault_t do_huge_pmd_numa_page(struct vm_fault *vmf)
 				goto next;
 			}
 
+			// TODO Put it back at the top but relock in cases with goto ?
+			spin_unlock(vmf->ptl);
 			if (!split_folio(folio)) {
 				trace_printk("Folio successfully splitted !");
 				folio_unlock(folio);
