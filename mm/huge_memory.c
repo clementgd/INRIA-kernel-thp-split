@@ -1774,7 +1774,7 @@ vm_fault_t do_huge_pmd_numa_page(struct vm_fault *vmf)
 			trace_printk("Current nid (%d) is different from last nid (%d). Last cpuid : %d. Refcount : %d, mapcount : %d", this_nid, cpupid_to_nid(last_cpupid), last_cpupid, folio_ref_count(folio), folio_mapcount(folio));
 			
 			// TODO remove ?
-			// spin_unlock(vmf->ptl);
+			spin_unlock(vmf->ptl);
 
 			// if (vma_not_suitable_for_thp_split(vma)) {
 			// 	// goto out;
@@ -1824,6 +1824,7 @@ vm_fault_t do_huge_pmd_numa_page(struct vm_fault *vmf)
 			} else {
 				trace_printk("split_folio failed");
 				folio_unlock(folio);
+				vmf->ptl = pmd_lock(vma->vm_mm, vmf->pmd);
 			}
 		}
 	}
