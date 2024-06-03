@@ -1771,7 +1771,7 @@ vm_fault_t do_huge_pmd_numa_page(struct vm_fault *vmf)
 
 		// TODO Clem Make sure cpupid_to_nid can handle invalid last_cpuid
 		if (!cpupid_cpu_unset(last_cpupid) && cpupid_to_nid(last_cpupid) != this_nid) {
-			trace_printk("Current nid (%d) is different from last nid (%d). Last cpuid : %d", this_nid, cpupid_to_nid(last_cpupid), last_cpupid);
+			trace_printk("Current nid (%d) is different from last nid (%d). Last cpuid : %d. Refcount : %d, mapcount : %d", this_nid, cpupid_to_nid(last_cpupid), last_cpupid, folio_ref_count(folio), folio_mapcount(folio));
 			
 			// TODO remove ?
 			spin_unlock(vmf->ptl);
@@ -1787,8 +1787,10 @@ vm_fault_t do_huge_pmd_numa_page(struct vm_fault *vmf)
 
 			/* FOLL_DUMP to ignore special (like zero) pages */
 			if (!is_transparent_hugepage(folio)) {
-				trace_printk("WARNING SPLIT : is_transparent_hugepage() returned false");
+				// trace_printk("WARNING SPLIT : is_transparent_hugepage() returned false");
 				// goto next;
+			} else {
+				trace_printk("INFO SPLIT : is_transparent_hugepage() returned true");
 			}
 			if (!folio_test_large(folio)) {
 				trace_printk("WARNING SPLIT : folio_test_large() returned false");

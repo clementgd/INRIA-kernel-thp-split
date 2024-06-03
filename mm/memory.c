@@ -5288,10 +5288,10 @@ vm_fault_t handle_pte_fault(struct vm_fault *vmf)
 		 * it into a huge pmd: just retry later if so.
 		 */
 		// TODO Clem log before and after to see if smth weird happens
-		trace_printk("Before pte_offset_map_nolock");
+		// trace_printk("Before pte_offset_map_nolock");
 		vmf->pte = pte_offset_map_nolock(vmf->vma->vm_mm, vmf->pmd,
 						 vmf->address, &vmf->ptl);
-		trace_printk("After pte_offset_map_nolock");
+		// trace_printk("After pte_offset_map_nolock");
 		if (unlikely(!vmf->pte)) {
 			trace_printk("Actually pte is 0");
 			return 0;
