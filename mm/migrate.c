@@ -1662,14 +1662,32 @@ static int migrate_pages_batch(struct list_head *from,
 			 * we will migrate them after the rest of the
 			 * list is processed.
 			 */
+
+			if (is_thp && folio_nid(folio) == private) {
+				nr_failed++;
+				stats->nr_thp_failed++;
+				if (!try_split_folio(folio, split_folios)) {
+					stats->nr_thp_split++;
+					stats->nr_split++;
+					trace_printk("Successfully split folio for same node migration");
+					continue;
+				}
+				trace_printk("Unable to split folio for same node migration");
+				stats->nr_failed_pages += nr_pages;
+				list_move_tail(&folio->lru, ret_folios);
+				continue;
+			}
+
 			if (!thp_migration_supported() && is_thp) {
 				nr_failed++;
 				stats->nr_thp_failed++;
 				if (!try_split_folio(folio, split_folios)) {
 					stats->nr_thp_split++;
 					stats->nr_split++;
+					trace_printk("Successfully split folio for different node migration");
 					continue;
 				}
+				trace_printk("Unable split folio for different node migration");
 				stats->nr_failed_pages += nr_pages;
 				list_move_tail(&folio->lru, ret_folios);
 				continue;
@@ -1757,6 +1775,7 @@ static int migrate_pages_batch(struct list_head *from,
 	nr_failed += retry;
 	stats->nr_thp_failed += thp_retry;
 	stats->nr_failed_pages += nr_retry_pages;
+
 move:
 	/* Flush TLBs for all unmapped folios */
 	try_to_unmap_flush();
