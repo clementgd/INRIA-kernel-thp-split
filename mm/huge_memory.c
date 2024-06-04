@@ -1840,7 +1840,6 @@ vm_fault_t do_huge_pmd_numa_page(struct vm_fault *vmf)
 			deferred_split_folio(folio);
 
 			folio_lock(folio);
-			folio_get(folio);
 			spin_unlock(vmf->ptl);
 			if (!split_folio(folio)) {
 				trace_printk("Successfully splitted folio");
