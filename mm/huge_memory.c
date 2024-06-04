@@ -2978,6 +2978,8 @@ static void __split_huge_page_tail(struct folio *folio, int tail,
 static void __split_huge_page(struct page *page, struct list_head *list,
 		pgoff_t end, unsigned int new_order)
 {
+	trace_printk("ENTERING __split_huge_page");
+
 	struct folio *folio = page_folio(page);
 	struct page *head = &folio->page;
 	struct lruvec *lruvec;
@@ -3272,8 +3274,10 @@ int split_huge_page_to_list_to_order(struct page *page, struct list_head *list,
 		 */
 		xas_lock(&xas);
 		xas_reset(&xas);
-		if (xas_load(&xas) != folio)
+		if (xas_load(&xas) != folio) {
+			trace_printk("EXITING split_huge_page_to_list_to_order because ( xas_load(&xas) != folio )");
 			goto fail;
+		}
 	}
 
 	/* Prevent deferred_split_scan() touching ->_refcount */
@@ -3309,14 +3313,17 @@ int split_huge_page_to_list_to_order(struct page *page, struct list_head *list,
 		}
 
 		__split_huge_page(page, list, end, new_order);
+		trace_printk("split_huge_page_to_list_to_order SUCCEEDED");
 		ret = 0;
 	} else {
 		spin_unlock(&ds_queue->split_queue_lock);
 fail:
+		trace_printk("split_huge_page_to_list_to_order FAILED");
 		if (mapping)
 			xas_unlock(&xas);
 		local_irq_enable();
 		remap_page(folio, folio_nr_pages(folio));
+		trace_printk("split_huge_page_to_list_to_order : remapped pages. Result is -EAGAIN");
 		ret = -EAGAIN;
 	}
 
