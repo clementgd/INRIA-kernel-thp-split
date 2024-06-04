@@ -72,6 +72,8 @@ static unsigned long deferred_split_count(struct shrinker *shrink,
 static unsigned long deferred_split_scan(struct shrinker *shrink,
 					 struct shrink_control *sc);
 
+extern struct static_key_false sched_nb_split_shared_hugepages;
+
 static atomic_t huge_zero_refcount;
 struct page *huge_zero_page __read_mostly;
 unsigned long huge_zero_pfn __read_mostly = ~0UL;
@@ -1709,9 +1711,27 @@ struct page *follow_trans_huge_pmd(struct vm_area_struct *vma,
 	return page;
 }
 
+static inline bool vma_not_suitable_for_thp_split(struct vm_area_struct *vma);
+
+static inline int try_split_folio(struct folio *folio, struct list_head *split_folios)
+{
+	int rc;
+
+	folio_lock(folio);
+	rc = split_folio_to_list(folio, split_folios);
+	folio_unlock(folio);
+	if (!rc)
+		list_move_tail(&folio->lru, split_folios);
+
+	return rc;
+}
+
+
 /* NUMA hinting page fault entry point for trans huge pmds */
 vm_fault_t do_huge_pmd_numa_page(struct vm_fault *vmf)
 {
+	// trace_printk("Entered do_huge_pmd_numa_page");
+
 	struct vm_area_struct *vma = vmf->vma;
 	pmd_t oldpmd = vmf->orig_pmd;
 	pmd_t pmd;
@@ -1721,6 +1741,7 @@ vm_fault_t do_huge_pmd_numa_page(struct vm_fault *vmf)
 	int target_nid, last_cpupid = (-1 & LAST_CPUPID_MASK);
 	bool migrated = false, writable = false;
 	int flags = 0;
+	// bool should_split = false;
 
 	vmf->ptl = pmd_lock(vma->vm_mm, vmf->pmd);
 	if (unlikely(!pmd_same(oldpmd, *vmf->pmd))) {
@@ -1743,6 +1764,11 @@ vm_fault_t do_huge_pmd_numa_page(struct vm_fault *vmf)
 	if (!folio)
 		goto out_map;
 
+	if (!folio_test_large(folio)) {
+		trace_printk("WARNING : Entered do_huge_pmd_numa_page with regular folio.");
+		// goto out_map;
+	}
+
 	/* See similar comment in do_numa_page for explanation */
 	if (!writable)
 		flags |= TNF_NO_GROUP;
@@ -1754,6 +1780,64 @@ vm_fault_t do_huge_pmd_numa_page(struct vm_fault *vmf)
 	 */
 	if (node_is_toptier(nid))
 		last_cpupid = folio_last_cpupid(folio);
+
+	if (static_branch_unlikely(&sched_nb_split_shared_hugepages)) {
+		int this_cpu =  raw_smp_processor_id();
+		int this_nid = cpu_to_node(this_cpu);
+
+		// TODO Clem Make sure cpupid_to_nid can handle invalid last_cpuid
+		if (!cpupid_cpu_unset(last_cpupid) && cpupid_to_nid(last_cpupid) != this_nid) {
+			trace_printk("Current nid (%d) is different from last nid (%d). Last cpuid : %d. Refcount : %d, mapcount : %d", this_nid, cpupid_to_nid(last_cpupid), last_cpupid, folio_ref_count(folio), folio_mapcount(folio));
+			
+			if (vma_not_suitable_for_thp_split(vma)) {
+				// goto out;
+				trace_printk("WARNING SPLIT : vma not suitable for thp split");
+			}
+
+			if (folio == NULL) {
+				trace_printk("WARNING SPLIT : folio is NULL");
+				goto next;
+			}
+
+			/* FOLL_DUMP to ignore special (like zero) pages */
+			if (!is_transparent_hugepage(folio)) {
+				trace_printk("WARNING SPLIT : is_transparent_hugepage() returned FALSE");
+				// goto next;
+			} else {
+				trace_printk("INFO SPLIT : is_transparent_hugepage() returned TRUE");
+			}
+			if (!folio_test_large(folio)) {
+				trace_printk("WARNING SPLIT : folio_test_large() returned FALSE");
+				goto next;
+			} else {
+				trace_printk("INFO SPLIT : folio_test_large() returned TRUE");
+			}
+
+			// TODO :
+			// - Put it before vma suitable for thp split
+			// - Try to unlock ptl only after split ?
+			// - Put the folio before and take it after ?
+			/* Restore the PMD */
+			trace_printk("About to restore PMD");
+			pmd = pmd_modify(oldpmd, vma->vm_page_prot);
+			pmd = pmd_mkyoung(pmd);
+			if (writable)
+				pmd = pmd_mkwrite(pmd, vma);
+			set_pmd_at(vma->vm_mm, haddr, vmf->pmd, pmd);
+			update_mmu_cache_pmd(vma, vmf->address, vmf->pmd);
+			spin_unlock(vmf->ptl);
+			trace_printk("After spin unlock, finished restoring PMD");
+
+			LIST_HEAD(split_folios);
+			if (!try_split_folio(folio, &split_folios)) {
+				trace_printk("Successfully splitted folio");
+			} else {
+				trace_printk("Unable to split folio");
+			}
+		}
+	}
+
+next:
 	target_nid = numa_migrate_prep(folio, vma, haddr, nid, &flags);
 	if (target_nid == NUMA_NO_NODE) {
 		folio_put(folio);
@@ -1763,6 +1847,7 @@ vm_fault_t do_huge_pmd_numa_page(struct vm_fault *vmf)
 	spin_unlock(vmf->ptl);
 	writable = false;
 
+	trace_printk("INFO do_huge_pmd_numa_page : calling migrate_misplaced_folio");
 	migrated = migrate_misplaced_folio(folio, vma, target_nid);
 	if (migrated) {
 		flags |= TNF_MIGRATED;
@@ -3039,6 +3124,8 @@ bool can_split_folio(struct folio *folio, int *pextra_pins)
 int split_huge_page_to_list_to_order(struct page *page, struct list_head *list,
 				     unsigned int new_order)
 {
+	// trace_printk("Entering split_huge_page_to_list_to_order");
+
 	struct folio *folio = page_folio(page);
 	struct deferred_split *ds_queue = get_deferred_split_queue(folio);
 	/* reset xarray order to new order after split */
@@ -3416,6 +3503,7 @@ next:
 	pr_debug("%lu of %lu THP split\n", split, total);
 }
 
+// TODO Clem maybe look into that ?
 static inline bool vma_not_suitable_for_thp_split(struct vm_area_struct *vma)
 {
 	return vma_is_special_huge(vma) || (vma->vm_flags & VM_IO) ||
@@ -3457,6 +3545,7 @@ static int split_huge_pages_pid(int pid, unsigned long vaddr_start,
 	pr_debug("Split huge pages in pid: %d, vaddr: [0x%lx - 0x%lx]\n",
 		 pid, vaddr_start, vaddr_end);
 
+	// TODO Clem maybe this kind of lock is what I need to do
 	mmap_read_lock(mm);
 	/*
 	 * always increase addr by PAGE_SIZE, since we could have a PTE page

@@ -2633,7 +2633,7 @@ static void update_task_scan_period(struct task_struct *p,
 			p->numa_scan_period << 1);
 
 		p->mm->numa_next_scan = jiffies +
-			msecs_to_jiffies(p->numa_scan_period);
+			msecs_to_jiffies(sysctl_numa_balancing_scan_period_max);
 
 		return;
 	}
@@ -3233,7 +3233,7 @@ static void task_numa_work(struct callback_head *work)
 
 	if (!mm->numa_next_scan) {
 		mm->numa_next_scan = now +
-			msecs_to_jiffies(sysctl_numa_balancing_scan_delay);
+			msecs_to_jiffies(sysctl_numa_balancing_scan_period_max);
 	}
 
 	/*
@@ -3248,7 +3248,7 @@ static void task_numa_work(struct callback_head *work)
 		p->numa_scan_period = task_scan_start(p);
 	}
 
-	next_scan = now + msecs_to_jiffies(p->numa_scan_period);
+	next_scan = now + msecs_to_jiffies(sysctl_numa_balancing_scan_period_max);
 	if (!try_cmpxchg(&mm->numa_next_scan, &migrate, next_scan))
 		return;
 
@@ -3256,7 +3256,9 @@ static void task_numa_work(struct callback_head *work)
 	 * Delay this task enough that another task of this mm will likely win
 	 * the next time around.
 	 */
-	p->node_stamp += 2 * TICK_NSEC;
+	// TODO Clem make sure this does not hinder the scan frequency to much
+	// CF fair.c line 3520
+	p->node_stamp += 2 * TICK_NSEC; 
 
 	pages = sysctl_numa_balancing_scan_size;
 	pages <<= 20 - PAGE_SHIFT; /* MB in pages */
@@ -3323,6 +3325,7 @@ retry_pids:
 
 			vma->numab_state->start_scan_seq = mm->numa_scan_seq;
 
+			// TODO Clem what does this do ?
 			vma->numab_state->next_scan = now +
 				msecs_to_jiffies(sysctl_numa_balancing_scan_delay);
 
@@ -3515,14 +3518,18 @@ static void task_tick_numa(struct rq *rq, struct task_struct *curr)
 	now = curr->se.sum_exec_runtime;
 	period = (u64)curr->numa_scan_period * NSEC_PER_MSEC;
 
-	if (now > curr->node_stamp + period) {
-		if (!curr->node_stamp)
-			curr->numa_scan_period = task_scan_start(curr);
-		curr->node_stamp += period;
+	// if (now > curr->node_stamp + period) {
+	// 	if (!curr->node_stamp)
+	// 		curr->numa_scan_period = task_scan_start(curr);
+	// 	curr->node_stamp += period;
 
-		if (!time_before(jiffies, curr->mm->numa_next_scan))
-			task_work_add(curr, work, TWA_RESUME);
-	}
+	// 	if (!time_before(jiffies, curr->mm->numa_next_scan))
+	// 		task_work_add(curr, work, TWA_RESUME);
+	// }
+
+	if (!time_before(jiffies, curr->mm->numa_next_scan))
+		task_work_add(curr, work, TWA_RESUME);
+	
 }
 
 static void update_scan_period(struct task_struct *p, int new_cpu)

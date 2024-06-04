@@ -5054,6 +5054,8 @@ int numa_migrate_prep(struct folio *folio, struct vm_area_struct *vma,
 
 static vm_fault_t do_numa_page(struct vm_fault *vmf)
 {
+	// trace_printk("Entered do_numa_page");
+
 	struct vm_area_struct *vma = vmf->vma;
 	struct folio *folio = NULL;
 	int nid = NUMA_NO_NODE;
@@ -5088,12 +5090,16 @@ static vm_fault_t do_numa_page(struct vm_fault *vmf)
 		writable = true;
 
 	folio = vm_normal_folio(vma, vmf->address, pte);
-	if (!folio || folio_is_zone_device(folio))
+	if (!folio || folio_is_zone_device(folio)) {
+		trace_printk("ERROR : do_numa_page with invalid folio");
 		goto out_map;
+	}
 
 	/* TODO: handle PTE-mapped THP */
-	if (folio_test_large(folio))
+	if (folio_test_large(folio)) {
+		trace_printk("ERROR : do_numa_page with huge page. How is it possible ?");
 		goto out_map;
+	}
 
 	/*
 	 * Avoid grouping on RO pages in general. RO pages shouldn't hurt as
@@ -5263,7 +5269,7 @@ split:
  * The mmap_lock may have been released depending on flags and our return value.
  * See filemap_fault() and __folio_lock_or_retry().
  */
-static vm_fault_t handle_pte_fault(struct vm_fault *vmf)
+vm_fault_t handle_pte_fault(struct vm_fault *vmf)
 {
 	pte_t entry;
 
@@ -5283,10 +5289,16 @@ static vm_fault_t handle_pte_fault(struct vm_fault *vmf)
 		 * mode; but shmem or file collapse to THP could still morph
 		 * it into a huge pmd: just retry later if so.
 		 */
+		// TODO Clem log before and after to see if smth weird happens
+		// trace_printk("Before pte_offset_map_nolock");
 		vmf->pte = pte_offset_map_nolock(vmf->vma->vm_mm, vmf->pmd,
 						 vmf->address, &vmf->ptl);
-		if (unlikely(!vmf->pte))
+		// trace_printk("After pte_offset_map_nolock");
+		if (unlikely(!vmf->pte)) {
+			trace_printk("ERROR : Actually pte is 0");
 			return 0;
+		}
+
 		vmf->orig_pte = ptep_get_lockless(vmf->pte);
 		vmf->flags |= FAULT_FLAG_ORIG_PTE_VALID;
 
