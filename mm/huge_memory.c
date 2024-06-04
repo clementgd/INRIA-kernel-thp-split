@@ -1789,7 +1789,7 @@ vm_fault_t do_huge_pmd_numa_page(struct vm_fault *vmf)
 		if (!cpupid_cpu_unset(last_cpupid) && cpupid_to_nid(last_cpupid) != this_nid) {
 			trace_printk("Current nid (%d) is different from last nid (%d). Last cpuid : %d. Refcount : %d, mapcount : %d", this_nid, cpupid_to_nid(last_cpupid), last_cpupid, folio_ref_count(folio), folio_mapcount(folio));
 			
-			folio_put(folio);
+			// folio_put(folio);
 			// TODO :
 			// - Put it before vma suitable for thp split
 			// - Try to unlock ptl only after split ?
@@ -1830,12 +1830,14 @@ vm_fault_t do_huge_pmd_numa_page(struct vm_fault *vmf)
 			// 	trace_printk("INFO SPLIT : folio_test_large() returned TRUE");
 			// }
 
-			folio_get(folio);
+			// folio_get(folio);
 			LIST_HEAD(split_folios);
 			if (!try_split_folio(folio, &split_folios)) {
 				trace_printk("Successfully splitted folio");
 			} else {
 				trace_printk("Unable to split folio");
+				folio_put(folio);
+				goto out;
 			}
 			folio_put(folio);
 			return 0;
@@ -3146,7 +3148,7 @@ int split_huge_page_to_list_to_order(struct page *page, struct list_head *list,
 	VM_BUG_ON_FOLIO(!folio_test_large(folio), folio);
 
 	if (new_order >= folio_order(folio)) {
-		trace_printk("EXITING split_huge_page_to_list_to_order because ( new_order >= folio_order(folio) )");
+		trace_printk("EXITING split_huge_page_to_list_to_order because ( new_order (%d) >= folio_order(folio) (%d) )", new_order, folio_order(folio));
 		return -EINVAL;
 	}
 
