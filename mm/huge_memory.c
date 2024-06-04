@@ -1795,15 +1795,8 @@ vm_fault_t do_huge_pmd_numa_page(struct vm_fault *vmf)
 			// - Try to unlock ptl only after split ?
 			// - Put the folio before and take it after ?
 			/* Restore the PMD */
-			trace_printk("About to restore PMD");
-			pmd = pmd_modify(oldpmd, vma->vm_page_prot);
-			pmd = pmd_mkyoung(pmd);
-			if (writable)
-				pmd = pmd_mkwrite(pmd, vma);
-			set_pmd_at(vma->vm_mm, haddr, vmf->pmd, pmd);
-			update_mmu_cache_pmd(vma, vmf->address, vmf->pmd);
+
 			spin_unlock(vmf->ptl);
-			trace_printk("After spin unlock, finished restoring PMD");
 
 			
 			// if (vma_not_suitable_for_thp_split(vma)) {
@@ -1836,11 +1829,12 @@ vm_fault_t do_huge_pmd_numa_page(struct vm_fault *vmf)
 				trace_printk("Successfully splitted folio");
 			} else {
 				trace_printk("Unable to split folio");
-				folio_put(folio);
-				goto out;
+				// folio_put(folio);
+				// goto out;
 			}
 			folio_put(folio);
-			return 0;
+			// return 0;
+			goto out;
 		}
 	}
 
