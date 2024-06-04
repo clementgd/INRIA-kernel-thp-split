@@ -1796,7 +1796,7 @@ vm_fault_t do_huge_pmd_numa_page(struct vm_fault *vmf)
 			// - Put the folio before and take it after ?
 			/* Restore the PMD */
 
-			spin_unlock(vmf->ptl);
+			
 
 			
 			// if (vma_not_suitable_for_thp_split(vma)) {
@@ -1823,18 +1823,33 @@ vm_fault_t do_huge_pmd_numa_page(struct vm_fault *vmf)
 			// 	trace_printk("INFO SPLIT : folio_test_large() returned TRUE");
 			// }
 
-			// folio_get(folio);
-			LIST_HEAD(split_folios);
-			if (!try_split_folio(folio, &split_folios)) {
+			// // folio_get(folio);
+			// folio_lock(folio);
+			// rc = split_folio_to_list(folio, split_folios);
+			// folio_unlock(folio);
+			// if (!try_split_folio(folio, &split_folios)) {
+			// 	trace_printk("Successfully splitted folio");
+			// } else {
+			// 	trace_printk("Unable to split folio");
+			// 	// folio_put(folio);
+			// 	// goto out;
+			// }
+			// folio_put(folio);
+			// return 0;
+			// // goto out;
+			deferred_split_folio(folio);
+
+			folio_lock(folio);
+			folio_get(folio);
+			spin_unlock(vmf->ptl);
+			if (!split_folio(folio)) {
 				trace_printk("Successfully splitted folio");
 			} else {
 				trace_printk("Unable to split folio");
-				// folio_put(folio);
-				// goto out;
 			}
+			folio_unlock(folio);
 			folio_put(folio);
-			// return 0;
-			goto out;
+			return 0;
 		}
 	}
 
