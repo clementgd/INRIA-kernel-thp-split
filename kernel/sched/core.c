@@ -4568,11 +4568,15 @@ static void __sched_fork(unsigned long clone_flags, struct task_struct *p)
 	init_sched_mm_cid(p);
 }
 
-DEFINE_STATIC_KEY_FALSE(sched_numa_balancing);
+DEFINE_STATIC_KEY_FALSE(sched_numa_balancing); // TODO Diff betweem static key true / false ?
+DEFINE_STATIC_KEY_FALSE(sched_nb_split_shared_hugepages);
+
 
 #ifdef CONFIG_NUMA_BALANCING
 
 int sysctl_numa_balancing_mode;
+static unsigned int sysctl_nb_split_shared_hugepages = 0; // Default value
+
 
 static void __set_numabalancing_state(bool enabled)
 {
@@ -4582,6 +4586,17 @@ static void __set_numabalancing_state(bool enabled)
 		static_branch_disable(&sched_numa_balancing);
 }
 
+static void __set_nb_split_shared_hugepages_state(bool enabled) 
+{
+	// Function name will be printed along with the message
+	trace_printk("NUMAB Setting sysctl to %d\n", enabled);
+	if (enabled)
+		static_branch_enable(&sched_nb_split_shared_hugepages);
+	else
+		static_branch_disable(&sched_nb_split_shared_hugepages);
+}
+
+
 void set_numabalancing_state(bool enabled)
 {
 	if (enabled)
@@ -4590,6 +4605,20 @@ void set_numabalancing_state(bool enabled)
 		sysctl_numa_balancing_mode = NUMA_BALANCING_DISABLED;
 	__set_numabalancing_state(enabled);
 }
+
+// We need these functions to assign the static branch
+static int sysctl_nb_split_shared_hugepages_handler(struct ctl_table *table, int write,
+			  void *buffer, size_t *lenp, loff_t *ppos) 
+{
+	// Will write to `table->data`, that should be `sysctl_nb_split_shared_hugepages`
+	int err = proc_dointvec_minmax(table, write, buffer, lenp, ppos);
+	if (err < 0)
+		return err;
+	if (write)
+		__set_nb_split_shared_hugepages_state(sysctl_nb_split_shared_hugepages);
+	return err;
+}
+
 
 #ifdef CONFIG_PROC_SYSCTL
 static void reset_memory_tiering(void)
@@ -4739,6 +4768,15 @@ static struct ctl_table sched_core_sysctls[] = {
 		.proc_handler	= sysctl_numa_balancing,
 		.extra1		= SYSCTL_ZERO,
 		.extra2		= SYSCTL_FOUR,
+	},
+	{
+		.procname	= "nb_split_shared_hugepages",
+		.data		= &sysctl_nb_split_shared_hugepages,
+		.maxlen		= sizeof(unsigned int),
+		.mode		= 0644,
+		.proc_handler	= sysctl_nb_split_shared_hugepages_handler,
+		.extra1		= SYSCTL_ZERO, // Min value for the sysctl
+		.extra2		= SYSCTL_ONE, // Max value
 	},
 #endif /* CONFIG_NUMA_BALANCING */
 	{}

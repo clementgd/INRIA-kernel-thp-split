@@ -72,6 +72,8 @@ static unsigned long deferred_split_count(struct shrinker *shrink,
 static unsigned long deferred_split_scan(struct shrinker *shrink,
 					 struct shrink_control *sc);
 
+extern struct static_key_false sched_nb_split_shared_hugepages;
+
 static atomic_t huge_zero_refcount;
 struct page *huge_zero_page __read_mostly;
 unsigned long huge_zero_pfn __read_mostly = ~0UL;
@@ -1754,12 +1756,28 @@ vm_fault_t do_huge_pmd_numa_page(struct vm_fault *vmf)
 	 */
 	if (node_is_toptier(nid))
 		last_cpupid = folio_last_cpupid(folio);
+
+	if (static_branch_unlikely(&sched_nb_split_shared_hugepages)) {
+		int this_cpu =  raw_smp_processor_id();
+		int this_nid = cpu_to_node(this_cpu);
+
+		// TODO Clem Make sure cpupid_to_nid can handle invalid last_cpuid
+		if (!cpupid_cpu_unset(last_cpupid) && cpupid_to_nid(last_cpupid) != this_nid) {
+			// trace_printk("Current nid (%d) is different from last nid (%d). Last cpuid : %d. Refcount : %d, mapcount : %d", this_nid, cpupid_to_nid(last_cpupid), last_cpupid, folio_ref_count(folio), folio_mapcount(folio));
+			trace_printk("Current nid (%d) is different from last nid (%d)", this_nid, cpupid_to_nid(last_cpupid));
+			trace_printk("Estimated sharers : %d", folio_estimated_sharers(folio));
+			target_nid = NUMA_SPLIT;
+			goto migrate;
+		}
+	}
+
 	target_nid = numa_migrate_prep(folio, vma, haddr, nid, &flags);
 	if (target_nid == NUMA_NO_NODE) {
 		folio_put(folio);
 		goto out_map;
 	}
 
+migrate:
 	spin_unlock(vmf->ptl);
 	writable = false;
 
@@ -2889,6 +2907,8 @@ static void __split_huge_page_tail(struct folio *folio, int tail,
 static void __split_huge_page(struct page *page, struct list_head *list,
 		pgoff_t end, unsigned int new_order)
 {
+	trace_printk("ENTERING __split_huge_page");
+
 	struct folio *folio = page_folio(page);
 	struct page *head = &folio->page;
 	struct lruvec *lruvec;
@@ -3039,6 +3059,8 @@ bool can_split_folio(struct folio *folio, int *pextra_pins)
 int split_huge_page_to_list_to_order(struct page *page, struct list_head *list,
 				     unsigned int new_order)
 {
+	// trace_printk("Entering split_huge_page_to_list_to_order");
+
 	struct folio *folio = page_folio(page);
 	struct deferred_split *ds_queue = get_deferred_split_queue(folio);
 	/* reset xarray order to new order after split */
@@ -3052,8 +3074,10 @@ int split_huge_page_to_list_to_order(struct page *page, struct list_head *list,
 	VM_BUG_ON_FOLIO(!folio_test_locked(folio), folio);
 	VM_BUG_ON_FOLIO(!folio_test_large(folio), folio);
 
-	if (new_order >= folio_order(folio))
+	if (new_order >= folio_order(folio)) {
+		trace_printk("EXITING split_huge_page_to_list_to_order because ( new_order (%d) >= folio_order(folio) (%d) )", new_order, folio_order(folio));
 		return -EINVAL;
+	}
 
 	/* Cannot split anonymous THP to order-1 */
 	if (new_order == 1 && folio_test_anon(folio)) {
@@ -3063,12 +3087,15 @@ int split_huge_page_to_list_to_order(struct page *page, struct list_head *list,
 
 	if (new_order) {
 		/* Only swapping a whole PMD-mapped folio is supported */
-		if (folio_test_swapcache(folio))
+		if (folio_test_swapcache(folio)) {
+			trace_printk("EXITING split_huge_page_to_list_to_order because ( folio_test_swapcache(folio) ) : Only swapping a whole PMD-mapped folio is supported");
 			return -EINVAL;
+		}
 		/* Split shmem folio to non-zero order not supported */
 		if (shmem_mapping(folio->mapping)) {
 			VM_WARN_ONCE(1,
 				"Cannot split shmem folio to non-0 order");
+			trace_printk("EXITING split_huge_page_to_list_to_order because Cannot split shmem folio to non-0 order");
 			return -EINVAL;
 		}
 		/* No split if the file system does not support large folio */
@@ -3083,13 +3110,17 @@ int split_huge_page_to_list_to_order(struct page *page, struct list_head *list,
 	is_hzp = is_huge_zero_page(&folio->page);
 	if (is_hzp) {
 		pr_warn_ratelimited("Called split_huge_page for huge zero page\n");
+		trace_printk("EXITING split_huge_page_to_list_to_order because Called split_huge_page for huge zero page");
 		return -EBUSY;
 	}
 
-	if (folio_test_writeback(folio))
+	if (folio_test_writeback(folio)) {
+		trace_printk("EXITING split_huge_page_to_list_to_order because ( folio_test_writeback(folio) )");
 		return -EBUSY;
+	}
 
 	if (folio_test_anon(folio)) {
+		trace_printk("Folio is anon");
 		/*
 		 * The caller does not necessarily hold an mmap_lock that would
 		 * prevent the anon_vma disappearing so we first we take a
@@ -3100,6 +3131,7 @@ int split_huge_page_to_list_to_order(struct page *page, struct list_head *list,
 		 */
 		anon_vma = folio_get_anon_vma(folio);
 		if (!anon_vma) {
+			trace_printk("EXITING split_huge_page_to_list_to_order because ( folio_test_anon(folio) )");
 			ret = -EBUSY;
 			goto out;
 		}
@@ -3113,6 +3145,7 @@ int split_huge_page_to_list_to_order(struct page *page, struct list_head *list,
 
 		/* Truncated ? */
 		if (!mapping) {
+			trace_printk("EXITING split_huge_page_to_list_to_order because mapping truncated");
 			ret = -EBUSY;
 			goto out;
 		}
@@ -3121,6 +3154,7 @@ int split_huge_page_to_list_to_order(struct page *page, struct list_head *list,
 							GFP_RECLAIM_MASK);
 
 		if (!filemap_release_folio(folio, gfp)) {
+			trace_printk("EXITING split_huge_page_to_list_to_order because ( !filemap_release_folio(folio, gfp) )");
 			ret = -EBUSY;
 			goto out;
 		}
@@ -3128,6 +3162,7 @@ int split_huge_page_to_list_to_order(struct page *page, struct list_head *list,
 		xas_split_alloc(&xas, folio, folio_order(folio), gfp);
 		if (xas_error(&xas)) {
 			ret = xas_error(&xas);
+			trace_printk("EXITING split_huge_page_to_list_to_order because ( xas_error(&xas) ). Err code : %d", ret);
 			goto out;
 		}
 
@@ -3151,10 +3186,12 @@ int split_huge_page_to_list_to_order(struct page *page, struct list_head *list,
 	 * split PMDs
 	 */
 	if (!can_split_folio(folio, &extra_pins)) {
+		trace_printk("EXITING split_huge_page_to_list_to_order because (!can_split_folio(folio, &extra_pins) )");
 		ret = -EAGAIN;
 		goto out_unlock;
 	}
 
+	trace_printk("split_huge_page_to_list_to_order proceeding to unmap folio");
 	unmap_folio(folio);
 
 	/* block interrupt reentry in xa_lock and spinlock */
@@ -3166,8 +3203,10 @@ int split_huge_page_to_list_to_order(struct page *page, struct list_head *list,
 		 */
 		xas_lock(&xas);
 		xas_reset(&xas);
-		if (xas_load(&xas) != folio)
+		if (xas_load(&xas) != folio) {
+			trace_printk("EXITING split_huge_page_to_list_to_order because ( xas_load(&xas) != folio )");
 			goto fail;
+		}
 	}
 
 	/* Prevent deferred_split_scan() touching ->_refcount */
@@ -3203,14 +3242,17 @@ int split_huge_page_to_list_to_order(struct page *page, struct list_head *list,
 		}
 
 		__split_huge_page(page, list, end, new_order);
+		trace_printk("split_huge_page_to_list_to_order SUCCEEDED");
 		ret = 0;
 	} else {
 		spin_unlock(&ds_queue->split_queue_lock);
 fail:
+		trace_printk("split_huge_page_to_list_to_order FAILED");
 		if (mapping)
 			xas_unlock(&xas);
 		local_irq_enable();
 		remap_page(folio, folio_nr_pages(folio));
+		trace_printk("split_huge_page_to_list_to_order : remapped pages. Result is -EAGAIN");
 		ret = -EAGAIN;
 	}
 
@@ -3416,6 +3458,7 @@ next:
 	pr_debug("%lu of %lu THP split\n", split, total);
 }
 
+// TODO Clem maybe look into that ?
 static inline bool vma_not_suitable_for_thp_split(struct vm_area_struct *vma)
 {
 	return vma_is_special_huge(vma) || (vma->vm_flags & VM_IO) ||
@@ -3457,6 +3500,7 @@ static int split_huge_pages_pid(int pid, unsigned long vaddr_start,
 	pr_debug("Split huge pages in pid: %d, vaddr: [0x%lx - 0x%lx]\n",
 		 pid, vaddr_start, vaddr_end);
 
+	// TODO Clem maybe this kind of lock is what I need to do
 	mmap_read_lock(mm);
 	/*
 	 * always increase addr by PAGE_SIZE, since we could have a PTE page

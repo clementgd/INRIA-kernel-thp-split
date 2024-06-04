@@ -13,6 +13,7 @@
 #define MAX_NUMNODES    (1 << NODES_SHIFT)
 
 #define	NUMA_NO_NODE	(-1)
+#define	NUMA_SPLIT	(-2)
 #define	NUMA_NO_MEMBLK	(-1)
 
 /* optionally keep NUMA memory info available post init */

@@ -1662,6 +1662,18 @@ static int migrate_pages_batch(struct list_head *from,
 			 * we will migrate them after the rest of the
 			 * list is processed.
 			 */
+			if (private == NUMA_SPLIT) {
+				nr_failed++;
+				if (!try_split_folio(folio, split_folios)) {
+					stats->nr_thp_split++;
+					stats->nr_split++;
+					continue;
+				}
+				stats->nr_failed_pages += nr_pages;
+				list_move_tail(&folio->lru, ret_folios);
+				continue;
+			}
+
 			if (!thp_migration_supported() && is_thp) {
 				nr_failed++;
 				stats->nr_thp_failed++;
@@ -1757,6 +1769,11 @@ static int migrate_pages_batch(struct list_head *from,
 	nr_failed += retry;
 	stats->nr_thp_failed += thp_retry;
 	stats->nr_failed_pages += nr_retry_pages;
+
+	if (private == NUMA_SPLIT) {
+		return nr_failed;
+	}
+
 move:
 	/* Flush TLBs for all unmapped folios */
 	try_to_unmap_flush();
