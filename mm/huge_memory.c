@@ -1813,6 +1813,13 @@ vm_fault_t do_huge_pmd_numa_page(struct vm_fault *vmf)
 				trace_printk("INFO SPLIT : folio_test_large() returned TRUE");
 			}
 
+			LIST_HEAD(split_folios);
+			if (!try_split_folio(folio, &split_folios)) {
+				trace_printk("Successfully splitted folio");
+			} else {
+				trace_printk("Unable to split folio");
+			}
+
 			// TODO :
 			// - Put it before vma suitable for thp split
 			// - Try to unlock ptl only after split ?
@@ -1827,13 +1834,7 @@ vm_fault_t do_huge_pmd_numa_page(struct vm_fault *vmf)
 			update_mmu_cache_pmd(vma, vmf->address, vmf->pmd);
 			spin_unlock(vmf->ptl);
 			trace_printk("After spin unlock, finished restoring PMD");
-
-			LIST_HEAD(split_folios);
-			if (!try_split_folio(folio, &split_folios)) {
-				trace_printk("Successfully splitted folio");
-			} else {
-				trace_printk("Unable to split folio");
-			}
+			return 0;
 		}
 	}
 
