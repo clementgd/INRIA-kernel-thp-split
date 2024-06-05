@@ -5092,8 +5092,10 @@ static vm_fault_t do_numa_page(struct vm_fault *vmf)
 		goto out_map;
 
 	/* TODO: handle PTE-mapped THP */
-	if (folio_test_large(folio))
+	if (folio_test_large(folio)) {
+		trace_printk("WARNING do_numa_page : huge page");
 		goto out_map;
+	}
 
 	/*
 	 * Avoid grouping on RO pages in general. RO pages shouldn't hurt as
