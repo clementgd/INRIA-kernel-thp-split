@@ -1775,6 +1775,7 @@ static int migrate_pages_batch(struct list_head *from,
 	nr_failed += retry;
 	stats->nr_thp_failed += thp_retry;
 	stats->nr_failed_pages += nr_retry_pages;
+	trace_printk("Number of nodes in unmap_folios : %ld", list_count_nodes(&unmap_folios));
 
 move:
 	/* Flush TLBs for all unmapped folios */
@@ -1984,15 +1985,11 @@ again:
 		 * is counted as 1 failure already.  And, we only try to migrate
 		 * with minimal effort, force MIGRATE_ASYNC mode and retry once.
 		 */
-		printk(KERN_CRIT "Number of nodes in the split_folios list : %ld", list_count_nodes(&split_folios));
-		if (folio_nid(folio) != private) {
-			migrate_pages_batch(&split_folios, get_new_folio,
+		trace_printk("Number of nodes in the split_folios list : %ld", list_count_nodes(&split_folios));
+		migrate_pages_batch(&split_folios, get_new_folio,
 					put_new_folio, private, MIGRATE_ASYNC, reason,
 					&ret_folios, NULL, &stats, 1);
-			printk(KERN_CRIT "Number of nodes in the split_folios list after migrate_pages_batch : %ld", list_count_nodes(&split_folios));
-		} else {
-			printk(KERN_CRIT "Avoiding migration");
-		}
+		trace_printk("Number of nodes in the split_folios list after migrate_pages_batch : %ld", list_count_nodes(&split_folios));
 		list_splice_tail_init(&split_folios, &ret_folios);
 	}
 	rc_gather += rc;
