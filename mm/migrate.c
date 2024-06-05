@@ -209,6 +209,7 @@ static bool remove_migration_pte(struct folio *folio,
 #endif
 
 		folio_get(folio);
+		// INFO Clem here is where the new ptes are created when splitted
 		pte = mk_pte(new, READ_ONCE(vma->vm_page_prot));
 		old_pte = ptep_get(pvmw.pte);
 
@@ -1244,11 +1245,14 @@ static int migrate_folio_unmap(new_folio_t get_new_folio,
 		/* Establish migration ptes */
 		VM_BUG_ON_FOLIO(folio_test_anon(src) &&
 			       !folio_test_ksm(src) && !anon_vma, src);
+		// INFO Clem this in turn will call split_huge_pmd(freeze = true)
+		// Maybe this is what I am missing ?
 		try_to_migrate(src, mode == MIGRATE_ASYNC ? TTU_BATCH_FLUSH : 0);
 		old_page_state |= PAGE_WAS_MAPPED;
 	}
 
 	if (!folio_mapped(src)) {
+		// INFO Clem : just moves some metadata
 		__migrate_folio_record(dst, old_page_state, anon_vma);
 		return MIGRATEPAGE_UNMAP;
 	}
@@ -1775,6 +1779,7 @@ static int migrate_pages_batch(struct list_head *from,
 	nr_failed += retry;
 	stats->nr_thp_failed += thp_retry;
 	stats->nr_failed_pages += nr_retry_pages;
+	// trace_printk("Number of nodes in unmap_folios : %ld", list_count_nodes(&unmap_folios));
 
 move:
 	/* Flush TLBs for all unmapped folios */
@@ -1984,9 +1989,11 @@ again:
 		 * is counted as 1 failure already.  And, we only try to migrate
 		 * with minimal effort, force MIGRATE_ASYNC mode and retry once.
 		 */
+		trace_printk("Number of nodes in the split_folios list : %ld", list_count_nodes(&split_folios));
 		migrate_pages_batch(&split_folios, get_new_folio,
-				put_new_folio, private, MIGRATE_ASYNC, reason,
-				&ret_folios, NULL, &stats, 1);
+					put_new_folio, private, MIGRATE_ASYNC, reason,
+					&ret_folios, NULL, &stats, 1);
+		trace_printk("Number of nodes in the split_folios list after migrate_pages_batch : %ld", list_count_nodes(&split_folios));
 		list_splice_tail_init(&split_folios, &ret_folios);
 	}
 	rc_gather += rc;
@@ -2527,7 +2534,7 @@ static struct folio *alloc_misplaced_dst_folio(struct folio *src,
 	return __folio_alloc_node(gfp, order, nid);
 }
 
-static int numamigrate_isolate_folio(pg_data_t *pgdat, struct folio *folio)
+int numamigrate_isolate_folio(pg_data_t *pgdat, struct folio *folio)
 {
 	int nr_pages = folio_nr_pages(folio);
 
@@ -2554,6 +2561,7 @@ static int numamigrate_isolate_folio(pg_data_t *pgdat, struct folio *folio)
 		return 0;
 	}
 
+	// trace_printk("Sane numamigrate_isolate_folio");
 	if (!folio_isolate_lru(folio))
 		return 0;
 

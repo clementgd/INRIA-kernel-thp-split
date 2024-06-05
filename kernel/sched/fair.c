@@ -3140,10 +3140,10 @@ void task_numa_fault(int last_cpupid, int mem_node, int pages, int flags)
 	 * Retry to migrate task to preferred node periodically, in case it
 	 * previously failed, or the scheduler moved us.
 	 */
-	// if (time_after(jiffies, p->numa_migrate_retry)) {
-	// 	task_numa_placement(p);
-	// 	numa_migrate_preferred(p);
-	// }
+	if (time_after(jiffies, p->numa_migrate_retry)) {
+		task_numa_placement(p);
+		numa_migrate_preferred(p);
+	}
 
 	if (migrated)
 		p->numa_pages_migrated += pages;
