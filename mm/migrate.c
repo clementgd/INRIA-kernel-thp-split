@@ -1984,13 +1984,15 @@ again:
 		 * is counted as 1 failure already.  And, we only try to migrate
 		 * with minimal effort, force MIGRATE_ASYNC mode and retry once.
 		 */
-		
-
-		trace_printk("Number of nodes in the split_folios list : %ld", list_count_nodes(&split_folios));
-		migrate_pages_batch(&split_folios, get_new_folio,
-				put_new_folio, private, MIGRATE_ASYNC, reason,
-				&ret_folios, NULL, &stats, 1);
-		trace_printk("Number of nodes in the split_folios list after migrate_pages_batch : %ld", list_count_nodes(&split_folios));
+		printk(KERN_CRIT "Number of nodes in the split_folios list : %ld", list_count_nodes(&split_folios));
+		if (folio_nid(folio) != private) {
+			migrate_pages_batch(&split_folios, get_new_folio,
+					put_new_folio, private, MIGRATE_ASYNC, reason,
+					&ret_folios, NULL, &stats, 1);
+			printk(KERN_CRIT "Number of nodes in the split_folios list after migrate_pages_batch : %ld", list_count_nodes(&split_folios));
+		} else {
+			printk(KERN_CRIT "Avoiding migration");
+		}
 		list_splice_tail_init(&split_folios, &ret_folios);
 	}
 	rc_gather += rc;
