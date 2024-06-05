@@ -1764,6 +1764,17 @@ vm_fault_t do_huge_pmd_numa_page(struct vm_fault *vmf)
 		if ( (this_cpu_nid != nid) || (!cpupid_cpu_unset(last_cpupid) && cpupid_to_nid(last_cpupid) != this_cpu_nid) ) {
 			// trace_printk("Cpu nid : %d, folio nid : %d, last cpu nid : %d", this_cpu_nid, nid, cpupid_to_nid(last_cpupid));
 			// trace_printk("Estimated sharers : %d", folio_estimated_sharers(folio));
+			folio_get(folio);
+
+			/* Record the current PID acceesing VMA */
+			vma_set_access_pid_bit(vma);
+
+			count_vm_numa_event(NUMA_HINT_FAULTS);
+			if (nid == numa_node_id()) {
+				count_vm_numa_event(NUMA_HINT_FAULTS_LOCAL);
+				flags |= TNF_FAULT_LOCAL;
+			}
+
 			target_nid = nid;
 			goto migrate;
 		}
