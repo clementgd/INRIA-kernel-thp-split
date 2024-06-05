@@ -1757,21 +1757,20 @@ vm_fault_t do_huge_pmd_numa_page(struct vm_fault *vmf)
 	if (node_is_toptier(nid))
 		last_cpupid = folio_last_cpupid(folio);
 
+	if (static_branch_likely(&sched_nb_split_shared_hugepages)) {
+		int this_cpu = raw_smp_processor_id();
+		int this_cpu_nid = cpu_to_node(this_cpu);
+
+		if ( (this_cpu_nid != nid) || (!cpupid_cpu_unset(last_cpupid) && cpupid_to_nid(last_cpupid) != this_cpu_nid) ) {
+			// trace_printk("Cpu nid : %d, folio nid : %d, last cpu nid : %d", this_cpu_nid, nid, cpupid_to_nid(last_cpupid));
+			// trace_printk("Estimated sharers : %d", folio_estimated_sharers(folio));
+			target_nid = nid;
+			goto migrate;
+		}
+	}
+
 	target_nid = numa_migrate_prep(folio, vma, haddr, nid, &flags);
 	if (target_nid == NUMA_NO_NODE) {
-		if (static_branch_unlikely(&sched_nb_split_shared_hugepages)) {
-			int this_cpu =  raw_smp_processor_id();
-			int this_cpu_nid = cpu_to_node(this_cpu);
-
-			if (this_cpu_nid != nid) {
-				// trace_printk("Current nid (%d) is different from last nid (%d). Last cpuid : %d. Refcount : %d, mapcount : %d", this_nid, cpupid_to_nid(last_cpupid), last_cpupid, folio_ref_count(folio), folio_mapcount(folio));
-				trace_printk("Cpu nid (%d) is different from folio nid (%d)", this_cpu_nid, nid);
-				trace_printk("Estimated sharers : %d", folio_estimated_sharers(folio));
-				target_nid = nid;
-				goto migrate;
-			}
-		}
-
 		folio_put(folio);
 		goto out_map;
 	}
