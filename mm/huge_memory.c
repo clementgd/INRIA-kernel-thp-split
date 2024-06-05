@@ -1796,7 +1796,7 @@ migrate:
 	}
 
 out:
-	if (nid != NUMA_NO_NODE)
+	if (nid != NUMA_NO_NODE && nid != NUMA_SPLIT)
 		task_numa_fault(last_cpupid, nid, HPAGE_PMD_NR, flags);
 
 	return 0;

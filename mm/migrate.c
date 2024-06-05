@@ -1662,13 +1662,15 @@ static int migrate_pages_batch(struct list_head *from,
 			 * we will migrate them after the rest of the
 			 * list is processed.
 			 */
-			if (private == NUMA_SPLIT) {
+			if (private == NUMA_SPLIT && is_thp) {
 				nr_failed++;
 				if (!try_split_folio(folio, split_folios)) {
 					stats->nr_thp_split++;
 					stats->nr_split++;
+					trace_printk("Successfully split folio");
 					continue;
 				}
+				trace_printk("Unable to split folio");
 				stats->nr_failed_pages += nr_pages;
 				list_move_tail(&folio->lru, ret_folios);
 				continue;
@@ -1771,7 +1773,7 @@ static int migrate_pages_batch(struct list_head *from,
 	stats->nr_failed_pages += nr_retry_pages;
 
 	if (private == NUMA_SPLIT) {
-		return nr_failed;
+		goto out;
 	}
 
 move:
