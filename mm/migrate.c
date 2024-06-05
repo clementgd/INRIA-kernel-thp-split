@@ -1672,7 +1672,7 @@ static int migrate_pages_batch(struct list_head *from,
 				}
 				trace_printk("Unable to split folio");
 				stats->nr_failed_pages += nr_pages;
-				list_move_tail(&folio->lru, ret_folios);
+				// list_move_tail(&folio->lru, ret_folios);
 				continue;
 			}
 
