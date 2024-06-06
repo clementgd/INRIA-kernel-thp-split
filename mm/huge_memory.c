@@ -1711,6 +1711,197 @@ struct page *follow_trans_huge_pmd(struct vm_area_struct *vma,
 	return page;
 }
 
+
+// Mostly copied from migrate_misplaced_folio
+// Returns 0 on error, and 1 (check with return value of numamigrate_isolate_folio) on success
+// TODO on error, just do straight to out_map
+// TODO Make it a bool function and clean it ?
+static int split_shared_transparent_huge_page_folio(struct folio *folio, struct vm_area_struct *vma)
+{
+	pg_data_t *pgdat = NODE_DATA(folio_nid(folio));
+	int ret = 0;
+
+	/*
+	 * Don't migrate file folios that are mapped in multiple processes
+	 * with execute permissions as they are probably shared libraries.
+	 * To check if the folio is shared, ideally we want to make sure
+	 * every page is mapped to the same process. Doing that is very
+	 * expensive, so check the estimated mapcount of the folio instead.
+	 */
+	// Maybe we could get rid of this check and not need vma as argument
+	if (folio_estimated_sharers(folio) != 1 && folio_is_file_lru(folio) &&
+	    (vma->vm_flags & VM_EXEC)) {
+		trace_printk("Don't split shared libraries");
+		goto out;
+	}
+
+	/*
+	 * Also do not migrate dirty folios as not all filesystems can move
+	 * dirty folios in MIGRATE_ASYNC mode which is a waste of cycles.
+	 */
+	if (folio_is_file_lru(folio) && folio_test_dirty(folio)) {
+		trace_printk("Don't split dirty folios");
+		goto out;
+	}
+
+	if (!numamigrate_isolate_folio(pgdat, folio)) {
+		trace_printk("ERROR : can't isolate folio");
+		goto out;
+	}
+
+	bool is_large = folio_test_large(folio);
+	bool is_thp = is_large && folio_test_pmd_mappable(folio);
+
+	if (!is_thp) {
+		trace_printk("Got a non thp, WTF");
+		goto out;
+	}
+
+	folio_lock(folio);
+	if (!split_folio(folio)) {
+		trace_printk("Successfully splitted folio");
+		ret = 1;
+	} else {
+		trace_printk("Unable to split folio");
+	}
+	folio_unlock(folio);
+
+out:
+	folio_put(folio);
+	return ret;
+}
+
+static int handle_unlock(struct vm_fault *vmf, int target_nid) {
+	// Mostly copied from handle_pte_fault
+	/*
+	* A regular pmd is established and it can't morph into a huge
+	* pmd by anon khugepaged, since that takes mmap_lock in write
+	* mode; but shmem or file collapse to THP could still morph
+	* it into a huge pmd: just retry later if so.
+	*/
+	vmf->pte = pte_offset_map_nolock(vmf->vma->vm_mm, vmf->pmd,
+						vmf->address, &vmf->ptl);
+	if (unlikely(!vmf->pte)) {
+		trace_printk("Unable to find pte");
+		return -1;
+	}
+	vmf->orig_pte = ptep_get_lockless(vmf->pte);
+	vmf->flags |= FAULT_FLAG_ORIG_PTE_VALID;
+
+	if (pte_none(vmf->orig_pte)) {
+		pte_unmap(vmf->pte);
+		vmf->pte = NULL;
+	}
+
+	if (!vmf->pte) {
+		trace_printk("pte missing");
+		return -1;
+	}
+
+	if (!pte_present(vmf->orig_pte)) {
+		trace_printk("pte not present");
+		return -1;
+	}
+
+	if (!pte_protnone(vmf->orig_pte)) {
+		trace_printk("ERROR : pte is not protnone");
+		// return -1;
+	}
+
+	if (!vma_is_accessible(vmf->vma)) {
+		trace_printk("ERROR : vma is not accessible");
+		// return -1;
+	}
+
+
+
+	// START of copy from do_numa_page
+
+	struct vm_area_struct *vma = vmf->vma;
+	struct folio *folio = NULL;
+	int nid = NUMA_NO_NODE;
+	bool writable = false;
+	pte_t pte, old_pte;
+
+	/*
+	 * The pte cannot be used safely until we verify, while holding the page
+	 * table lock, that its contents have not changed during fault handling.
+	 */
+	spin_lock(vmf->ptl);
+	/* Read the live PTE from the page tables: */
+	old_pte = ptep_get(vmf->pte);
+
+	if (unlikely(!pte_same(old_pte, vmf->orig_pte))) {
+		pte_unmap_unlock(vmf->pte, vmf->ptl);
+		goto out;
+	}
+
+	pte = pte_modify(old_pte, vma->vm_page_prot);
+
+	/*
+	 * Detect now whether the PTE could be writable; this information
+	 * is only valid while holding the PT lock.
+	 */
+	writable = pte_write(pte);
+	if (!writable && vma_wants_manual_pte_write_upgrade(vma) &&
+	    can_change_pte_writable(vma, vmf->address, pte))
+		writable = true;
+
+	if (target_nid == NUMA_NO_NODE) {
+		trace_printk("target_nid is NUMA_NO_NODE, going to out_map");
+		goto out_map;
+	}
+
+	folio = vm_normal_folio(vma, vmf->address, pte);
+	if (!folio || folio_is_zone_device(folio))
+		goto out_map;
+
+	/* TODO: handle PTE-mapped THP */
+	if (folio_test_large(folio)) {
+		trace_printk("WARNING handle_unlock : huge page");
+		goto out_map;
+	}
+
+
+	pte_unmap_unlock(vmf->pte, vmf->ptl);
+	writable = false;
+
+	/* Migrate to the requested node */
+	if (migrate_misplaced_folio(folio, vma, target_nid)) {
+		nid = target_nid;
+	} else {
+		vmf->pte = pte_offset_map_lock(vma->vm_mm, vmf->pmd,
+					       vmf->address, &vmf->ptl);
+		if (unlikely(!vmf->pte))
+			goto out;
+		if (unlikely(!pte_same(ptep_get(vmf->pte), vmf->orig_pte))) {
+			pte_unmap_unlock(vmf->pte, vmf->ptl);
+			goto out;
+		}
+		goto out_map;
+	}
+
+	// END of copy from do_numa_page
+
+out:
+	return 0;
+
+out_map:
+	/*
+	 * Make it present again, depending on how arch implements
+	 * non-accessible ptes, some can allow access by kernel mode.
+	 */
+	old_pte = ptep_modify_prot_start(vma, vmf->address, vmf->pte);
+	pte = pte_modify(old_pte, vma->vm_page_prot);
+	pte = pte_mkyoung(pte);
+	if (writable)
+		pte = pte_mkwrite(pte, vma);
+	ptep_modify_prot_commit(vma, vmf->address, vmf->pte, old_pte, pte);
+	update_mmu_cache_range(vmf, vma, vmf->address, vmf->pte, 1);
+	pte_unmap_unlock(vmf->pte, vmf->ptl);
+	return 0;
+}
+
 /* NUMA hinting page fault entry point for trans huge pmds */
 vm_fault_t do_huge_pmd_numa_page(struct vm_fault *vmf)
 {
@@ -1757,13 +1948,30 @@ vm_fault_t do_huge_pmd_numa_page(struct vm_fault *vmf)
 	if (node_is_toptier(nid))
 		last_cpupid = folio_last_cpupid(folio);
 
+
+	/*
+	Clem
+	- split_folio and in turn split_huge_page_to_list_to_order automatically handles unmapping and remapping pages so there should not be any issues on that end
+	- Basically what I want to do is introduce as little changes as possible to split the folios but then don't do anything to them, don't try to migrate them
+	- Only issue is now I would need to handle making the required folio accessible again, while leaving all the others in protnone and hoping they will get touch-migrated
+	- TODO : Investigate what happens when we split folios -> __split_huge_page
+
+
+	2 cases :
+	1. Different cpu node and folio node : only split if result of numa_migrate_prep is NUMA_NO_NODE ?
+	2. Different cpu nodes between 2 accesses : split, and migration to cpu node if different from folio nid
+	*/
+
+
+	// Case 2
 	if (static_branch_likely(&sched_nb_split_shared_hugepages)) {
 		int this_cpu = raw_smp_processor_id();
 		int this_cpu_nid = cpu_to_node(this_cpu);
 
-		if ( (this_cpu_nid != nid) || (!cpupid_cpu_unset(last_cpupid) && cpupid_to_nid(last_cpupid) != this_cpu_nid) ) {
-			// trace_printk("Cpu nid : %d, folio nid : %d, last cpu nid : %d", this_cpu_nid, nid, cpupid_to_nid(last_cpupid));
-			// trace_printk("Estimated sharers : %d", folio_estimated_sharers(folio));
+		if (!cpupid_cpu_unset(last_cpupid) && cpupid_to_nid(last_cpupid) != this_cpu_nid) {
+			trace_printk("Attempting case 2 page split : last cpu node = %d, curr cpu node = %d", cpupid_to_nid(last_cpupid), this_cpu_nid);
+			
+			// START of copy paste from numa_migrate_prep
 			folio_get(folio);
 
 			/* Record the current PID acceesing VMA */
@@ -1773,6 +1981,25 @@ vm_fault_t do_huge_pmd_numa_page(struct vm_fault *vmf)
 			if (nid == numa_node_id()) {
 				count_vm_numa_event(NUMA_HINT_FAULTS_LOCAL);
 				flags |= TNF_FAULT_LOCAL;
+			}
+			// END of copy paste from numa_migrate_prep
+
+			// To prevent out section from migrating task
+			nid = NUMA_NO_NODE;
+
+			// Mostly copy pasted from section below
+			spin_unlock(vmf->ptl);
+			writable = false;
+			int splitted = split_shared_transparent_huge_page_folio(folio, vma);
+			if (splitted) {
+				handle_unlock(vmf, NUMA_NO_NODE); // TODO Clem make it the node of cpu in case different from folio
+			} else {
+				vmf->ptl = pmd_lock(vma->vm_mm, vmf->pmd);
+				if (unlikely(!pmd_same(oldpmd, *vmf->pmd))) {
+					spin_unlock(vmf->ptl);
+					return 0;
+				}
+				goto out_map; 
 			}
 
 			target_nid = nid;
@@ -2764,6 +2991,7 @@ static void unmap_folio(struct folio *folio)
 	if (folio_test_pmd_mappable(folio))
 		ttu_flags |= TTU_SPLIT_HUGE_PMD;
 
+	// INFO Clem IMPORTANT
 	/*
 	 * Anon pages need migration entries to preserve them, but file
 	 * pages can simply be left unmapped, then faulted back on demand.
