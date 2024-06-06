@@ -1753,9 +1753,8 @@ static int split_shared_transparent_huge_page_folio(struct folio *folio, struct 
 
 
 	if (folio_test_hugetlb(folio)) {
-			list_move_tail(&folio->lru, &ret_folios);
-			continue;
-		}
+		trace_printk("ERROR : got folio_test_hugetlb");
+	}
 
 
 	bool is_large = folio_test_large(folio);
@@ -3208,11 +3207,11 @@ static void __split_huge_page(struct page *page, struct list_head *list,
 
 	trace_printk("After for loop");
 
-	if (!new_order)
+	if (!new_order) {
 		trace_printk("Entered (!new_order)");
 		ClearPageCompound(head);
 		trace_printk("After ClearPageCompound");
-	else {
+	} else {
 		struct folio *new_folio = (struct folio *)head;
 
 		folio_set_order(new_folio, new_order);
