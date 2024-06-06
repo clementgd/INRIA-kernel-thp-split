@@ -2560,6 +2560,7 @@ int numamigrate_isolate_folio(pg_data_t *pgdat, struct folio *folio)
 		return 0;
 	}
 
+	trace_printk("Sane numamigrate_isolate_folio");
 	if (!folio_isolate_lru(folio))
 		return 0;
 

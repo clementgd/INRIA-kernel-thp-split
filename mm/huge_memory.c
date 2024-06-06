@@ -1718,8 +1718,11 @@ struct page *follow_trans_huge_pmd(struct vm_area_struct *vma,
 // TODO Make it a bool function and clean it ?
 static int split_shared_transparent_huge_page_folio(struct folio *folio, struct vm_area_struct *vma)
 {
+	// START of copied section from migrate_misplaced_folio
+
 	pg_data_t *pgdat = NODE_DATA(folio_nid(folio));
 	int ret = 0;
+	// LIST_HEAD(splitpages);
 
 	/*
 	 * Don't migrate file folios that are mapped in multiple processes
@@ -1744,12 +1747,14 @@ static int split_shared_transparent_huge_page_folio(struct folio *folio, struct 
 		goto out;
 	}
 
-	if (!numamigrate_isolate_folio(pgdat, folio)) {
-		trace_printk("ERROR : can't isolate folio");
-		goto out;
-	}
+	// if (!numamigrate_isolate_folio(pgdat, folio)) {
+	// 	trace_printk("ERROR : can't isolate folio");
+	// 	goto out;
+	// }
 
-	// END of checks from migrate_misplaced_folio
+	// list_add(&folio->lru, &splitpages);
+
+	// END of copied section from migrate_misplaced_folio
 
 
 	if (folio_test_hugetlb(folio)) {
@@ -1766,7 +1771,7 @@ static int split_shared_transparent_huge_page_folio(struct folio *folio, struct 
 	}
 
 	folio_lock(folio);
-	trace_printk("Folio locked");
+	trace_printk("Folio successfully locked");
 	if (!split_folio(folio)) {
 		trace_printk("Successfully splitted folio");
 		ret = 1;
@@ -3065,6 +3070,7 @@ static void __split_huge_page_tail(struct folio *folio, int tail,
 	struct folio *new_folio = (struct folio *)page_tail;
 
 	VM_BUG_ON_PAGE(atomic_read(&page_tail->_mapcount) != -1, page_tail);
+	trace_printk("After 1st VM_BUG_ON_PAGE");
 
 	/*
 	 * Clone page flags before unfreezing refcount.
@@ -3100,6 +3106,7 @@ static void __split_huge_page_tail(struct folio *folio, int tail,
 	/* ->mapping in first and second tail page is replaced by other uses */
 	VM_BUG_ON_PAGE(tail > 2 && page_tail->mapping != TAIL_MAPPING,
 			page_tail);
+	trace_printk("After 2nd VM_BUG_ON_PAGE");
 	page_tail->mapping = head->mapping;
 	page_tail->index = head->index + tail;
 
@@ -3116,6 +3123,7 @@ static void __split_huge_page_tail(struct folio *folio, int tail,
 
 	/* Page flags must be visible before we make the page non-compound. */
 	smp_wmb();
+	trace_printk("After smp_wmb");
 
 	/*
 	 * Clear PageTail before unfreezing page refcount.
@@ -3140,6 +3148,7 @@ static void __split_huge_page_tail(struct folio *folio, int tail,
 		folio_set_idle(new_folio);
 
 	folio_xchg_last_cpupid(new_folio, folio_last_cpupid(folio));
+	trace_printk("After folio_xchg_last_cpupid");
 
 	/*
 	 * always add to the tail because some iterators expect new
@@ -3147,6 +3156,7 @@ static void __split_huge_page_tail(struct folio *folio, int tail,
 	 * migrate_pages
 	 */
 	lru_add_page_tail(head, page_tail, lruvec, list);
+	trace_printk("After lru_add_page_tail");
 }
 
 static void __split_huge_page(struct page *page, struct list_head *list,
