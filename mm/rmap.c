@@ -1962,6 +1962,7 @@ void try_to_unmap(struct folio *folio, enum ttu_flags flags)
  * If TTU_SPLIT_HUGE_PMD is specified any PMD mappings will be split into PTEs
  * containing migration entries.
  */
+// INFO Clem here is where we should make sure the prot_none correctly gets propagated ?
 static bool try_to_migrate_one(struct folio *folio, struct vm_area_struct *vma,
 		     unsigned long address, void *arg)
 {

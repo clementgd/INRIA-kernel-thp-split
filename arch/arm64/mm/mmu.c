@@ -1498,6 +1498,7 @@ pte_t ptep_modify_prot_start(struct vm_area_struct *vma, unsigned long addr, pte
 	return ptep_get_and_clear(vma->vm_mm, addr, ptep);
 }
 
+// INFO Clem
 void ptep_modify_prot_commit(struct vm_area_struct *vma, unsigned long addr, pte_t *ptep,
 			     pte_t old_pte, pte_t pte)
 {

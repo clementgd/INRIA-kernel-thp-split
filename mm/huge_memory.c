@@ -1771,8 +1771,6 @@ static int split_shared_transparent_huge_page_folio(struct folio *folio, struct 
 	}
 
 	folio_lock(folio);
-	pgprot_t initial_prot = vma->vm_page_prot;
-	vma->vm_page_prot = PAGE_NONE;
 	trace_printk("Folio successfully locked");
 	if (!split_folio(folio)) {
 		trace_printk("Successfully splitted folio");
@@ -1780,7 +1778,6 @@ static int split_shared_transparent_huge_page_folio(struct folio *folio, struct 
 	} else {
 		trace_printk("Unable to split folio");
 	}
-	vma->vm_page_prot = initial_prot;
 	folio_unlock(folio);
 
 out:
@@ -2788,6 +2785,7 @@ static void __split_huge_pmd_locked(struct vm_area_struct *vma, pmd_t *pmd,
 
 	pmd_migration = is_pmd_migration_entry(old_pmd);
 	if (unlikely(pmd_migration)) {
+		trace_printk("__split_huge_pmd_locked : is_pmd_migration_entry is TRUE")
 		swp_entry_t entry;
 
 		entry = pmd_to_swp_entry(old_pmd);
@@ -2876,6 +2874,7 @@ static void __split_huge_pmd_locked(struct vm_area_struct *vma, pmd_t *pmd,
 				swp_entry = make_migration_entry_young(swp_entry);
 			if (dirty)
 				swp_entry = make_migration_entry_dirty(swp_entry);
+			// TODO PROT Clem
 			entry = swp_entry_to_pte(swp_entry);
 			if (soft_dirty)
 				entry = pte_swp_mksoft_dirty(entry);
@@ -3257,8 +3256,9 @@ static void __split_huge_page(struct page *page, struct list_head *list,
 
 	if (nr_dropped)
 		shmem_uncharge(folio->mapping->host, nr_dropped);
+	// trace_printk("Remapping page for folio with %lu pages, nr = %u", folio_nr_pages(folio), nr);
+	// INFO Clem here for order 0 split, folio_nr_pages(folio) = 1 and nr = 512 (for a thp)
 	remap_page(folio, nr);
-	// trace_printk("After remap_page");
 
 	if (folio_test_swapcache(folio))
 		split_swap_cluster(folio->swap);
@@ -3274,6 +3274,7 @@ static void __split_huge_page(struct page *page, struct list_head *list,
 	// trace_printk("Position 1");
 
 	for (i = 0; i < nr; i += new_nr) {
+		// TODO Clem probably here reset the last cpuid so that on the next touch the page gets migrated to the cpu node
 		struct page *subpage = head + i;
 		struct folio *new_folio = page_folio(subpage);
 		// trace_printk("After page_folio");

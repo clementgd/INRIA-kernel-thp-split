@@ -212,6 +212,7 @@ static bool remove_migration_pte(struct folio *folio,
 		// INFO Clem here is where the new ptes are created when splitted
 		pte = mk_pte(new, READ_ONCE(vma->vm_page_prot));
 		old_pte = ptep_get(pvmw.pte);
+		trace_printk("Is old pte protnone : %d", pte_protnone(old_pte));
 
 		entry = pte_to_swp_entry(old_pte);
 		if (!is_migration_entry_young(entry))
