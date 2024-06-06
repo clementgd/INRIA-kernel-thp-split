@@ -86,6 +86,7 @@ static bool page_idle_clear_pte_refs_one(struct folio *folio,
 	return true;
 }
 
+// TODO Clem look into it to set the protection on the pages after split ?
 static void page_idle_clear_pte_refs(struct folio *folio)
 {
 	/*
