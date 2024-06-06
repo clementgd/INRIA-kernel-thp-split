@@ -1771,6 +1771,8 @@ static int split_shared_transparent_huge_page_folio(struct folio *folio, struct 
 	}
 
 	folio_lock(folio);
+	pgprot_t initial_prot = vma->vm_page_prot;
+	vma->vm_page_prot = PAGE_NONE;
 	trace_printk("Folio successfully locked");
 	if (!split_folio(folio)) {
 		trace_printk("Successfully splitted folio");
@@ -1778,6 +1780,7 @@ static int split_shared_transparent_huge_page_folio(struct folio *folio, struct 
 	} else {
 		trace_printk("Unable to split folio");
 	}
+	vma->vm_page_prot = initial_prot;
 	folio_unlock(folio);
 
 out:
