@@ -1778,7 +1778,7 @@ static int migrate_pages_batch(struct list_head *from,
 	nr_failed += retry;
 	stats->nr_thp_failed += thp_retry;
 	stats->nr_failed_pages += nr_retry_pages;
-	trace_printk("Number of nodes in unmap_folios : %ld", list_count_nodes(&unmap_folios));
+	// trace_printk("Number of nodes in unmap_folios : %ld", list_count_nodes(&unmap_folios));
 
 move:
 	/* Flush TLBs for all unmapped folios */

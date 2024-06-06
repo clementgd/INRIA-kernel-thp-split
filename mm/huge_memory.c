@@ -1749,6 +1749,15 @@ static int split_shared_transparent_huge_page_folio(struct folio *folio, struct 
 		goto out;
 	}
 
+	// END of checks from migrate_misplaced_folio
+
+
+	if (folio_test_hugetlb(folio)) {
+			list_move_tail(&folio->lru, &ret_folios);
+			continue;
+		}
+
+
 	bool is_large = folio_test_large(folio);
 	bool is_thp = is_large && folio_test_pmd_mappable(folio);
 
@@ -1758,6 +1767,7 @@ static int split_shared_transparent_huge_page_folio(struct folio *folio, struct 
 	}
 
 	folio_lock(folio);
+	trace_printk("Folio locked");
 	if (!split_folio(folio)) {
 		trace_printk("Successfully splitted folio");
 		ret = 1;
@@ -2002,8 +2012,7 @@ vm_fault_t do_huge_pmd_numa_page(struct vm_fault *vmf)
 				goto out_map; 
 			}
 
-			target_nid = nid;
-			goto migrate;
+			return 0;
 		}
 	}
 
@@ -3158,8 +3167,10 @@ static void __split_huge_page(struct page *page, struct list_head *list,
 
 	/* complete memcg works before add pages to LRU */
 	split_page_memcg(head, order, new_order);
+	trace_printk("After split_page_memcg");
 
 	if (folio_test_anon(folio) && folio_test_swapcache(folio)) {
+		trace_printk("Entered first if block");
 		offset = swp_offset(folio->swap);
 		swap_cache = swap_address_space(folio->swap);
 		xa_lock(&swap_cache->i_pages);
@@ -3167,11 +3178,14 @@ static void __split_huge_page(struct page *page, struct list_head *list,
 
 	/* lock lru list/PageCompound, ref frozen by page_ref_freeze */
 	lruvec = folio_lruvec_lock(folio);
+	trace_printk("After folio_lruvec_lock");
 
 	ClearPageHasHWPoisoned(head);
+	trace_printk("After ClearPageHasHWPoisoned");
 
 	for (i = nr - new_nr; i >= new_nr; i -= new_nr) {
 		__split_huge_page_tail(folio, i, lruvec, list, new_order);
+		trace_printk("After __split_huge_page_tail");
 		/* Some pages can be beyond EOF: drop them from page cache */
 		if (head[i].index >= end) {
 			struct folio *tail = page_folio(head + i);
@@ -3192,20 +3206,27 @@ static void __split_huge_page(struct page *page, struct list_head *list,
 		}
 	}
 
+	trace_printk("After for loop");
+
 	if (!new_order)
+		trace_printk("Entered (!new_order)");
 		ClearPageCompound(head);
+		trace_printk("After ClearPageCompound");
 	else {
 		struct folio *new_folio = (struct folio *)head;
 
 		folio_set_order(new_folio, new_order);
 	}
 	unlock_page_lruvec(lruvec);
+	trace_printk("After unlock_page_lruvec");
 	/* Caller disabled irqs, so they are still disabled here */
 
 	split_page_owner(head, order, new_order);
+	trace_printk("After unlock_page_lruvec");
 
 	/* See comment in __split_huge_page_tail() */
 	if (folio_test_anon(folio)) {
+		trace_printk("Entered (folio_test_anon(folio))");
 		/* Additional pin to swap cache */
 		if (folio_test_swapcache(folio)) {
 			folio_ref_add(folio, 1 + new_nr);
@@ -3219,10 +3240,12 @@ static void __split_huge_page(struct page *page, struct list_head *list,
 		xa_unlock(&folio->mapping->i_pages);
 	}
 	local_irq_enable();
+	trace_printk("After local_irq_enable");
 
 	if (nr_dropped)
 		shmem_uncharge(folio->mapping->host, nr_dropped);
 	remap_page(folio, nr);
+	trace_printk("After remap_page");
 
 	if (folio_test_swapcache(folio))
 		split_swap_cluster(folio->swap);
@@ -3235,9 +3258,12 @@ static void __split_huge_page(struct page *page, struct list_head *list,
 	if (new_order)
 		page = compound_head(page);
 
+	trace_printk("Position 1");
+
 	for (i = 0; i < nr; i += new_nr) {
 		struct page *subpage = head + i;
 		struct folio *new_folio = page_folio(subpage);
+		trace_printk("After page_folio");
 		if (subpage == page)
 			continue;
 		folio_unlock(new_folio);
