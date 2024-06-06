@@ -209,6 +209,7 @@ static bool remove_migration_pte(struct folio *folio,
 #endif
 
 		folio_get(folio);
+		// INFO Clem here is where the new ptes are created when splitted
 		pte = mk_pte(new, READ_ONCE(vma->vm_page_prot));
 		old_pte = ptep_get(pvmw.pte);
 
@@ -2560,7 +2561,7 @@ int numamigrate_isolate_folio(pg_data_t *pgdat, struct folio *folio)
 		return 0;
 	}
 
-	trace_printk("Sane numamigrate_isolate_folio");
+	// trace_printk("Sane numamigrate_isolate_folio");
 	if (!folio_isolate_lru(folio))
 		return 0;
 

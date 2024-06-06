@@ -1819,6 +1819,7 @@ static int handle_unlock(struct vm_fault *vmf, int target_nid) {
 
 	if (!pte_protnone(vmf->orig_pte)) {
 		trace_printk("ERROR : pte is not protnone");
+		trace_printk("Is the current pte protnone : %d", pte_protnone(*vmf->pte));
 		// return -1;
 	}
 
@@ -3070,7 +3071,7 @@ static void __split_huge_page_tail(struct folio *folio, int tail,
 	struct folio *new_folio = (struct folio *)page_tail;
 
 	VM_BUG_ON_PAGE(atomic_read(&page_tail->_mapcount) != -1, page_tail);
-	trace_printk("After 1st VM_BUG_ON_PAGE");
+	// trace_printk("After 1st VM_BUG_ON_PAGE");
 
 	/*
 	 * Clone page flags before unfreezing refcount.
@@ -3106,7 +3107,7 @@ static void __split_huge_page_tail(struct folio *folio, int tail,
 	/* ->mapping in first and second tail page is replaced by other uses */
 	VM_BUG_ON_PAGE(tail > 2 && page_tail->mapping != TAIL_MAPPING,
 			page_tail);
-	trace_printk("After 2nd VM_BUG_ON_PAGE");
+	// trace_printk("After 2nd VM_BUG_ON_PAGE");
 	page_tail->mapping = head->mapping;
 	page_tail->index = head->index + tail;
 
@@ -3123,7 +3124,7 @@ static void __split_huge_page_tail(struct folio *folio, int tail,
 
 	/* Page flags must be visible before we make the page non-compound. */
 	smp_wmb();
-	trace_printk("After smp_wmb");
+	// trace_printk("After smp_wmb");
 
 	/*
 	 * Clear PageTail before unfreezing page refcount.
@@ -3148,7 +3149,7 @@ static void __split_huge_page_tail(struct folio *folio, int tail,
 		folio_set_idle(new_folio);
 
 	folio_xchg_last_cpupid(new_folio, folio_last_cpupid(folio));
-	trace_printk("After folio_xchg_last_cpupid");
+	// trace_printk("After folio_xchg_last_cpupid");
 
 	/*
 	 * always add to the tail because some iterators expect new
@@ -3156,7 +3157,7 @@ static void __split_huge_page_tail(struct folio *folio, int tail,
 	 * migrate_pages
 	 */
 	lru_add_page_tail(head, page_tail, lruvec, list);
-	trace_printk("After lru_add_page_tail");
+	// trace_printk("After lru_add_page_tail");
 }
 
 static void __split_huge_page(struct page *page, struct list_head *list,
@@ -3176,10 +3177,10 @@ static void __split_huge_page(struct page *page, struct list_head *list,
 
 	/* complete memcg works before add pages to LRU */
 	split_page_memcg(head, order, new_order);
-	trace_printk("After split_page_memcg");
+	// trace_printk("After split_page_memcg");
 
 	if (folio_test_anon(folio) && folio_test_swapcache(folio)) {
-		trace_printk("Entered first if block");
+		// trace_printk("Entered first if block");
 		offset = swp_offset(folio->swap);
 		swap_cache = swap_address_space(folio->swap);
 		xa_lock(&swap_cache->i_pages);
@@ -3187,14 +3188,14 @@ static void __split_huge_page(struct page *page, struct list_head *list,
 
 	/* lock lru list/PageCompound, ref frozen by page_ref_freeze */
 	lruvec = folio_lruvec_lock(folio);
-	trace_printk("After folio_lruvec_lock");
+	// trace_printk("After folio_lruvec_lock");
 
 	ClearPageHasHWPoisoned(head);
-	trace_printk("After ClearPageHasHWPoisoned");
+	// trace_printk("After ClearPageHasHWPoisoned");
 
 	for (i = nr - new_nr; i >= new_nr; i -= new_nr) {
 		__split_huge_page_tail(folio, i, lruvec, list, new_order);
-		trace_printk("After __split_huge_page_tail");
+		// trace_printk("After __split_huge_page_tail");
 		/* Some pages can be beyond EOF: drop them from page cache */
 		if (head[i].index >= end) {
 			struct folio *tail = page_folio(head + i);
@@ -3215,27 +3216,27 @@ static void __split_huge_page(struct page *page, struct list_head *list,
 		}
 	}
 
-	trace_printk("After for loop");
+	// trace_printk("After for loop");
 
 	if (!new_order) {
-		trace_printk("Entered (!new_order)");
+		// trace_printk("Entered (!new_order)");
 		ClearPageCompound(head);
-		trace_printk("After ClearPageCompound");
+		// trace_printk("After ClearPageCompound");
 	} else {
 		struct folio *new_folio = (struct folio *)head;
 
 		folio_set_order(new_folio, new_order);
 	}
 	unlock_page_lruvec(lruvec);
-	trace_printk("After unlock_page_lruvec");
+	// trace_printk("After unlock_page_lruvec");
 	/* Caller disabled irqs, so they are still disabled here */
 
 	split_page_owner(head, order, new_order);
-	trace_printk("After unlock_page_lruvec");
+	// trace_printk("After unlock_page_lruvec");
 
 	/* See comment in __split_huge_page_tail() */
 	if (folio_test_anon(folio)) {
-		trace_printk("Entered (folio_test_anon(folio))");
+		// trace_printk("Entered (folio_test_anon(folio))");
 		/* Additional pin to swap cache */
 		if (folio_test_swapcache(folio)) {
 			folio_ref_add(folio, 1 + new_nr);
@@ -3249,12 +3250,12 @@ static void __split_huge_page(struct page *page, struct list_head *list,
 		xa_unlock(&folio->mapping->i_pages);
 	}
 	local_irq_enable();
-	trace_printk("After local_irq_enable");
+	// trace_printk("After local_irq_enable");
 
 	if (nr_dropped)
 		shmem_uncharge(folio->mapping->host, nr_dropped);
 	remap_page(folio, nr);
-	trace_printk("After remap_page");
+	// trace_printk("After remap_page");
 
 	if (folio_test_swapcache(folio))
 		split_swap_cluster(folio->swap);
@@ -3267,12 +3268,12 @@ static void __split_huge_page(struct page *page, struct list_head *list,
 	if (new_order)
 		page = compound_head(page);
 
-	trace_printk("Position 1");
+	// trace_printk("Position 1");
 
 	for (i = 0; i < nr; i += new_nr) {
 		struct page *subpage = head + i;
 		struct folio *new_folio = page_folio(subpage);
-		trace_printk("After page_folio");
+		// trace_printk("After page_folio");
 		if (subpage == page)
 			continue;
 		folio_unlock(new_folio);
@@ -3328,6 +3329,7 @@ bool can_split_folio(struct folio *folio, int *pextra_pins)
  * Returns -EBUSY if the page is pinned or if anon_vma disappeared from under
  * us.
  */
+// INFO Clem key function in thp split
 int split_huge_page_to_list_to_order(struct page *page, struct list_head *list,
 				     unsigned int new_order)
 {
