@@ -1994,17 +1994,23 @@ static int split_thp_on_page_fault(struct folio *folio, struct vm_fault *vmf)
 		// folio_address() of the resulting folio is PMD aligned, so we can just replace pte range from that address until the end of the pmd that we can get via the function 
 		// Copied from change_prot_numa
 
-		unsigned long addr = (unsigned long) folio_address(folio);
-		unsigned long end = addr + PMD_SIZE;
+		trace_printk("VMA address space : [%016lx - %016lx]", vma->vm_start, vma->vm_end);
+		// TODO Clem would be best to have a custom function that avoids the pte of the page we are trying to save...
+		
+		// change_prot_numa(vma, vmf->address, vmf->address + PMD_SIZE);
+		// trace_printk("Successfully re-applied numa protections");
 
-		trace_printk("Setting PROT_NONE on [%016lx - %016lx]", addr, end);
+		// unsigned long addr = (unsigned long) folio_address(folio);
+		// unsigned long end = addr + PMD_SIZE;
+		// trace_printk("Setting PROT_NONE on [%016lx - %016lx]", addr, end);
 		// trace_printk("split_thp_on_page_fault -- PMD addr : %016lx", );
 		// trace_printk("split_thp_on_page_fault -- First pte pointer addr : %016lx", (pte_t *)pmd_page_vaddr(*pmd));
 		// (pte_t *)pmd_page_vaddr(*pmd) + pte_index(address)
 
-		unsigned long virt_addr = vmf->address;
-		unsigned long virt_end = vmf->address + PMD_SIZE;
-		trace_printk("Using virtual address the range becomes [%016lx - %016lx]", virt_addr, virt_end);
+		// unsigned long virt_addr = vmf->address;
+		// unsigned long virt_end = vmf->address + PMD_SIZE;
+		// trace_printk("Using virtual address the range becomes [%016lx - %016lx]", virt_addr, virt_end);
+		// TODO get the address of the pte corresponding with the folio
 
 
 
@@ -2177,14 +2183,15 @@ out_map:
 	 * Make it present again, depending on how arch implements
 	 * non-accessible ptes, some can allow access by kernel mode.
 	 */
-	old_pte = ptep_modify_prot_start(vma, vmf->address, vmf->pte);
-	trace_printk("handle_unlock -- In out_map, Is old_pte protnone : %d", pte_protnone(old_pte));
-	pte = pte_modify(old_pte, vma->vm_page_prot);
-	pte = pte_mkyoung(pte);
-	if (writable)
-		pte = pte_mkwrite(pte, vma);
-	ptep_modify_prot_commit(vma, vmf->address, vmf->pte, old_pte, pte);
-	update_mmu_cache_range(vmf, vma, vmf->address, vmf->pte, 1);
+	// old_pte = ptep_modify_prot_start(vma, vmf->address, vmf->pte);
+	// trace_printk("handle_unlock -- In out_map, Is old_pte protnone : %d", pte_protnone(old_pte));
+	// pte = pte_modify(old_pte, vma->vm_page_prot);
+	// pte = pte_mkyoung(pte);
+	// if (writable)
+	// 	pte = pte_mkwrite(pte, vma);
+	// ptep_modify_prot_commit(vma, vmf->address, vmf->pte, old_pte, pte);
+	// update_mmu_cache_range(vmf, vma, vmf->address, vmf->pte, 1);
+	trace_printk("Exiting handle_unlock with COMMENTED OUT protection restoration");
 	pte_unmap_unlock(vmf->pte, vmf->ptl);
 	return 0;
 }
@@ -2291,6 +2298,7 @@ vm_fault_t do_huge_pmd_numa_page(struct vm_fault *vmf)
 				goto out_map; 
 			}
 
+			trace_printk("Exiting do_huge_pmd_numa_page without restoring protections");
 			return 0;
 		}
 	}
