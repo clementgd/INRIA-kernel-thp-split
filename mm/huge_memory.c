@@ -1711,16 +1711,234 @@ struct page *follow_trans_huge_pmd(struct vm_area_struct *vma,
 	return page;
 }
 
+// // Logic copied from change_pte_range
+// static long mkprotnone(struct mmu_gather *tlb,
+// 		struct vm_area_struct *vma, pmd_t *pmd, unsigned long addr,
+// 		unsigned long end, pgprot_t newprot, unsigned long cp_flags, unsigned int nr)
+// {
+// 	pte_t *pte, oldpte;
+// 	spinlock_t *ptl;
+// 	long pages = 0;
+// 	int target_node = NUMA_NO_NODE;
+// 	bool prot_numa = cp_flags & MM_CP_PROT_NUMA;
+// 	bool uffd_wp = cp_flags & MM_CP_UFFD_WP;
+// 	bool uffd_wp_resolve = cp_flags & MM_CP_UFFD_WP_RESOLVE;
+
+// 	tlb_change_page_size(tlb, PAGE_SIZE);
+// 	pte = pte_offset_map_lock(vma->vm_mm, pmd, addr, &ptl);
+// 	if (!pte)
+// 		return -EAGAIN;
+
+// 	/* Get target node for single threaded private VMAs */
+// 	if (prot_numa && !(vma->vm_flags & VM_SHARED) &&
+// 	    atomic_read(&vma->vm_mm->mm_users) == 1)
+// 		target_node = numa_node_id();
+
+// 	flush_tlb_batched_pending(vma->vm_mm);
+// 	arch_enter_lazy_mmu_mode();
+
+// 	int i = 0;
+// 	while (pte++, addr += PAGE_SIZE, addr != end);
+
+// 	do {
+// 		oldpte = ptep_get(pte);
+// 		if (pte_present(oldpte)) {
+// 			pte_t ptent;
+
+// 			/*
+// 			 * Avoid trapping faults against the zero or KSM
+// 			 * pages. See similar comment in change_huge_pmd.
+// 			 */
+// 			if (prot_numa) {
+// 				struct folio *folio;
+// 				int nid;
+// 				bool toptier;
+
+// 				/* Avoid TLB flush if possible */
+// 				if (pte_protnone(oldpte))
+// 					continue;
+
+// 				folio = vm_normal_folio(vma, addr, oldpte);
+// 				if (!folio || folio_is_zone_device(folio) ||
+// 				    folio_test_ksm(folio))
+// 					continue;
+
+// 				/* Also skip shared copy-on-write pages */
+// 				if (is_cow_mapping(vma->vm_flags) &&
+// 				    folio_ref_count(folio) != 1)
+// 					continue;
+
+// 				/*
+// 				 * While migration can move some dirty pages,
+// 				 * it cannot move them all from MIGRATE_ASYNC
+// 				 * context.
+// 				 */
+// 				if (folio_is_file_lru(folio) &&
+// 				    folio_test_dirty(folio))
+// 					continue;
+
+// 				/*
+// 				 * Don't mess with PTEs if page is already on the node
+// 				 * a single-threaded process is running on.
+// 				 */
+// 				nid = folio_nid(folio);
+// 				if (target_node == nid)
+// 					continue;
+// 				toptier = node_is_toptier(nid);
+
+// 				/*
+// 				 * Skip scanning top tier node if normal numa
+// 				 * balancing is disabled
+// 				 */
+// 				if (!(sysctl_numa_balancing_mode & NUMA_BALANCING_NORMAL) &&
+// 				    toptier)
+// 					continue;
+// 				if (sysctl_numa_balancing_mode & NUMA_BALANCING_MEMORY_TIERING &&
+// 				    !toptier)
+// 					folio_xchg_access_time(folio,
+// 						jiffies_to_msecs(jiffies));
+// 			}
+
+// 			oldpte = ptep_modify_prot_start(vma, addr, pte);
+// 			ptent = pte_modify(oldpte, newprot);
+
+// 			if (uffd_wp)
+// 				ptent = pte_mkuffd_wp(ptent);
+// 			else if (uffd_wp_resolve)
+// 				ptent = pte_clear_uffd_wp(ptent);
+
+// 			/*
+// 			 * In some writable, shared mappings, we might want
+// 			 * to catch actual write access -- see
+// 			 * vma_wants_writenotify().
+// 			 *
+// 			 * In all writable, private mappings, we have to
+// 			 * properly handle COW.
+// 			 *
+// 			 * In both cases, we can sometimes still change PTEs
+// 			 * writable and avoid the write-fault handler, for
+// 			 * example, if a PTE is already dirty and no other
+// 			 * COW or special handling is required.
+// 			 */
+// 			if ((cp_flags & MM_CP_TRY_CHANGE_WRITABLE) &&
+// 			    !pte_write(ptent) &&
+// 			    can_change_pte_writable(vma, addr, ptent))
+// 				ptent = pte_mkwrite(ptent, vma);
+
+// 			ptep_modify_prot_commit(vma, addr, pte, oldpte, ptent);
+// 			if (pte_needs_flush(oldpte, ptent))
+// 				tlb_flush_pte_range(tlb, addr, PAGE_SIZE);
+// 			pages++;
+// 		} else if (is_swap_pte(oldpte)) {
+// 			swp_entry_t entry = pte_to_swp_entry(oldpte);
+// 			pte_t newpte;
+
+// 			if (is_writable_migration_entry(entry)) {
+// 				struct folio *folio = pfn_swap_entry_folio(entry);
+
+// 				/*
+// 				 * A protection check is difficult so
+// 				 * just be safe and disable write
+// 				 */
+// 				if (folio_test_anon(folio))
+// 					entry = make_readable_exclusive_migration_entry(
+// 							     swp_offset(entry));
+// 				else
+// 					entry = make_readable_migration_entry(swp_offset(entry));
+// 				newpte = swp_entry_to_pte(entry);
+// 				if (pte_swp_soft_dirty(oldpte))
+// 					newpte = pte_swp_mksoft_dirty(newpte);
+// 			} else if (is_writable_device_private_entry(entry)) {
+// 				/*
+// 				 * We do not preserve soft-dirtiness. See
+// 				 * copy_nonpresent_pte() for explanation.
+// 				 */
+// 				entry = make_readable_device_private_entry(
+// 							swp_offset(entry));
+// 				newpte = swp_entry_to_pte(entry);
+// 				if (pte_swp_uffd_wp(oldpte))
+// 					newpte = pte_swp_mkuffd_wp(newpte);
+// 			} else if (is_writable_device_exclusive_entry(entry)) {
+// 				entry = make_readable_device_exclusive_entry(
+// 							swp_offset(entry));
+// 				newpte = swp_entry_to_pte(entry);
+// 				if (pte_swp_soft_dirty(oldpte))
+// 					newpte = pte_swp_mksoft_dirty(newpte);
+// 				if (pte_swp_uffd_wp(oldpte))
+// 					newpte = pte_swp_mkuffd_wp(newpte);
+// 			} else if (is_pte_marker_entry(entry)) {
+// 				/*
+// 				 * Ignore error swap entries unconditionally,
+// 				 * because any access should sigbus anyway.
+// 				 */
+// 				if (is_poisoned_swp_entry(entry))
+// 					continue;
+// 				/*
+// 				 * If this is uffd-wp pte marker and we'd like
+// 				 * to unprotect it, drop it; the next page
+// 				 * fault will trigger without uffd trapping.
+// 				 */
+// 				if (uffd_wp_resolve) {
+// 					pte_clear(vma->vm_mm, addr, pte);
+// 					pages++;
+// 				}
+// 				continue;
+// 			} else {
+// 				newpte = oldpte;
+// 			}
+
+// 			if (uffd_wp)
+// 				newpte = pte_swp_mkuffd_wp(newpte);
+// 			else if (uffd_wp_resolve)
+// 				newpte = pte_swp_clear_uffd_wp(newpte);
+
+// 			if (!pte_same(oldpte, newpte)) {
+// 				set_pte_at(vma->vm_mm, addr, pte, newpte);
+// 				pages++;
+// 			}
+// 		} else {
+// 			/* It must be an none page, or what else?.. */
+// 			WARN_ON_ONCE(!pte_none(oldpte));
+
+// 			/*
+// 			 * Nobody plays with any none ptes besides
+// 			 * userfaultfd when applying the protections.
+// 			 */
+// 			if (likely(!uffd_wp))
+// 				continue;
+
+// 			if (userfaultfd_wp_use_markers(vma)) {
+// 				/*
+// 				 * For file-backed mem, we need to be able to
+// 				 * wr-protect a none pte, because even if the
+// 				 * pte is none, the page/swap cache could
+// 				 * exist.  Doing that by install a marker.
+// 				 */
+// 				set_pte_at(vma->vm_mm, addr, pte,
+// 					   make_pte_marker(PTE_MARKER_UFFD_WP));
+// 				pages++;
+// 			}
+// 		}
+// 	} while (pte++, i++, i < nr);
+// 	// arch_leave_lazy_mmu_mode();
+// 	pte_unmap_unlock(pte - 1, ptl);
+
+// 	return pages;
+// }
+
 
 // Mostly copied from migrate_misplaced_folio
 // Returns 0 on error, and 1 (check with return value of numamigrate_isolate_folio) on success
 // TODO on error, just do straight to out_map
 // TODO Make it a bool function and clean it ?
-static int split_shared_transparent_huge_page_folio(struct folio *folio, struct vm_area_struct *vma)
+// TODO Possibly we could remove the pmd argument
+static int split_thp_on_page_fault(struct folio *folio, struct vm_fault *vmf)
 {
+	trace_printk("Entered split_thp_on_page_fault with original folio address : %016lx", (unsigned long) folio_address(folio));
+	struct vm_area_struct *vma = vmf->vma;
 	// START of copied section from migrate_misplaced_folio
 
-	pg_data_t *pgdat = NODE_DATA(folio_nid(folio));
+	// pg_data_t *pgdat = NODE_DATA(folio_nid(folio));
 	int ret = 0;
 	// LIST_HEAD(splitpages);
 
@@ -1771,13 +1989,47 @@ static int split_shared_transparent_huge_page_folio(struct folio *folio, struct 
 	}
 
 	folio_lock(folio);
-	trace_printk("Folio successfully locked");
 	if (!split_folio(folio)) {
 		trace_printk("Successfully splitted folio");
+		// folio_address() of the resulting folio is PMD aligned, so we can just replace pte range from that address until the end of the pmd that we can get via the function 
+		// Copied from change_prot_numa
+
+		unsigned long addr = (unsigned long) folio_address(folio);
+		unsigned long end = addr + PMD_SIZE;
+
+		trace_printk("Setting PROT_NONE on [%016lx - %016lx]", addr, end);
+
+
+		// change_prot_numa(vma, addr, end);
+		// trace_printk("Successfully re-applied numa protections");
+
+		
+
+		// struct mmu_gather tlb;
+		// long nr_updated;
+
+		// tlb_gather_mmu(&tlb, vma->vm_mm);
+
+		// // nr_updated = change_protection(&tlb, vma, addr, end, MM_CP_PROT_NUMA);
+		// unsigned long addr = (unsigned long) folio_address(folio)
+		// unsigned long next = pmd_addr_end(addr, end);
+		// nr_updated = change_pte_range(&tlb, vma, vmf->pmd, addr, next, PAGE_NONE, MM_CP_PROT_NUMA);
+		// if (nr_updated > 0)
+		// 	count_vm_numa_events(NUMA_PTE_UPDATES, nr_updated);
+
+		// tlb_finish_mmu(&tlb);
+
+		// TODO Clem make all the protections protnone, given the pmd
+		// For that we can probably use the folio address
+		// To test that idea, get the PMD address mask
+		trace_printk("PMD_MASK = %016lx, PTE_MASK (actual name is PAGE_MASK) = %016lx", PMD_MASK, PAGE_MASK);
+		trace_printk("Result of folio address : %016lx", (unsigned long) folio_address(folio));
 		ret = 1;
 	} else {
 		trace_printk("Unable to split folio");
+		trace_printk("Is pmd still PROT_NONE :  folio order is : %u", pmd_protnone(*vmf->pmd));
 	}
+	trace_printk("New folio order is : %u, n pages : %lu", folio_order(folio), folio_nr_pages(folio));
 	folio_unlock(folio);
 
 out:
@@ -1786,6 +2038,8 @@ out:
 }
 
 static int handle_unlock(struct vm_fault *vmf, int target_nid) {
+	trace_printk("Entering handle_unlock with target nid : %d, vmf->address : %016lx", target_nid, vmf->address);
+
 	// Mostly copied from handle_pte_fault
 	/*
 	* A regular pmd is established and it can't morph into a huge
@@ -1796,35 +2050,36 @@ static int handle_unlock(struct vm_fault *vmf, int target_nid) {
 	vmf->pte = pte_offset_map_nolock(vmf->vma->vm_mm, vmf->pmd,
 						vmf->address, &vmf->ptl);
 	if (unlikely(!vmf->pte)) {
-		trace_printk("Unable to find pte");
+		trace_printk("ERROR : handle_unlock Unable to find pte");
 		return -1;
 	}
 	vmf->orig_pte = ptep_get_lockless(vmf->pte);
+	trace_printk("Is vmf->orig_pte protnone : %d", pte_protnone(vmf->orig_pte));
+
 	vmf->flags |= FAULT_FLAG_ORIG_PTE_VALID;
 
 	if (pte_none(vmf->orig_pte)) {
 		pte_unmap(vmf->pte);
+		trace_printk("ERROR : handle_unlock -- (pte_none(vmf->orig_pte)), setting vmf->pte = NULL");
 		vmf->pte = NULL;
 	}
 
 	if (!vmf->pte) {
-		trace_printk("pte missing");
+		trace_printk("ERROR : handle_unlock -- (!vmf->pte)");
 		return -1;
 	}
 
 	if (!pte_present(vmf->orig_pte)) {
-		trace_printk("pte not present");
+		trace_printk("ERROR : handle_unlock  -- !pte_present(vmf->orig_pte)");
 		return -1;
 	}
 
 	if (!pte_protnone(vmf->orig_pte)) {
-		trace_printk("ERROR : pte is not protnone");
-		trace_printk("Is the current pte protnone : %d", pte_protnone(*vmf->pte));
 		// return -1;
 	}
 
 	if (!vma_is_accessible(vmf->vma)) {
-		trace_printk("ERROR : vma is not accessible");
+		trace_printk("ERROR : handle_unlock  -- vmf->vma is not accessible");
 		// return -1;
 	}
 
@@ -1837,6 +2092,7 @@ static int handle_unlock(struct vm_fault *vmf, int target_nid) {
 	int nid = NUMA_NO_NODE;
 	bool writable = false;
 	pte_t pte, old_pte;
+	trace_printk("vma->vm_page_prot is none : %u", ((pgprot_val(vma->vm_page_prot) & _PAGE_PROTNONE) == _PAGE_PROTNONE));
 
 	/*
 	 * The pte cannot be used safely until we verify, while holding the page
@@ -1846,8 +2102,11 @@ static int handle_unlock(struct vm_fault *vmf, int target_nid) {
 	/* Read the live PTE from the page tables: */
 	old_pte = ptep_get(vmf->pte);
 
+	trace_printk("Is old_pte protnone : %d", pte_protnone(old_pte));
+
 	if (unlikely(!pte_same(old_pte, vmf->orig_pte))) {
 		pte_unmap_unlock(vmf->pte, vmf->ptl);
+		trace_printk("ERROR : handle_unlock  -- pte is not same anymore");
 		goto out;
 	}
 
@@ -1866,6 +2125,7 @@ static int handle_unlock(struct vm_fault *vmf, int target_nid) {
 		trace_printk("target_nid is NUMA_NO_NODE, going to out_map");
 		goto out_map;
 	}
+	trace_printk("handle_unlock -- Trying to migrate node");
 
 	folio = vm_normal_folio(vma, vmf->address, pte);
 	if (!folio || folio_is_zone_device(folio))
@@ -1899,6 +2159,7 @@ static int handle_unlock(struct vm_fault *vmf, int target_nid) {
 	// END of copy from do_numa_page
 
 out:
+	trace_printk("WARNING : exiting handle_unlock without having cleared the page");
 	return 0;
 
 out_map:
@@ -1907,6 +2168,7 @@ out_map:
 	 * non-accessible ptes, some can allow access by kernel mode.
 	 */
 	old_pte = ptep_modify_prot_start(vma, vmf->address, vmf->pte);
+	trace_printk("handle_unlock -- In out_map, Is old_pte protnone : %d", pte_protnone(old_pte));
 	pte = pte_modify(old_pte, vma->vm_page_prot);
 	pte = pte_mkyoung(pte);
 	if (writable)
@@ -2005,7 +2267,7 @@ vm_fault_t do_huge_pmd_numa_page(struct vm_fault *vmf)
 			// Mostly copy pasted from section below
 			spin_unlock(vmf->ptl);
 			writable = false;
-			int splitted = split_shared_transparent_huge_page_folio(folio, vma);
+			int splitted = split_thp_on_page_fault(folio, vmf);
 			if (splitted) {
 				handle_unlock(vmf, NUMA_NO_NODE); // TODO Clem make it the node of cpu in case different from folio
 			} else {
@@ -2027,7 +2289,7 @@ vm_fault_t do_huge_pmd_numa_page(struct vm_fault *vmf)
 		goto out_map;
 	}
 
-migrate:
+// migrate:
 	spin_unlock(vmf->ptl);
 	writable = false;
 
@@ -2697,6 +2959,7 @@ static void __split_huge_zero_page_pmd(struct vm_area_struct *vma,
 	pmd_populate(mm, pmd, pgtable);
 }
 
+// INFO Clem
 static void __split_huge_pmd_locked(struct vm_area_struct *vma, pmd_t *pmd,
 		unsigned long haddr, bool freeze)
 {
@@ -2710,6 +2973,8 @@ static void __split_huge_pmd_locked(struct vm_area_struct *vma, pmd_t *pmd,
 	unsigned long addr;
 	pte_t *pte;
 	int i;
+
+	trace_printk("Entering __split_huge_pmd_locked with pmd protnone = %d", pmd_protnone(*pmd));
 
 	VM_BUG_ON(haddr & ~HPAGE_PMD_MASK);
 	VM_BUG_ON_VMA(vma->vm_start > haddr, vma);
@@ -2785,7 +3050,7 @@ static void __split_huge_pmd_locked(struct vm_area_struct *vma, pmd_t *pmd,
 
 	pmd_migration = is_pmd_migration_entry(old_pmd);
 	if (unlikely(pmd_migration)) {
-		trace_printk("__split_huge_pmd_locked : is_pmd_migration_entry is TRUE")
+		trace_printk("__split_huge_pmd_locked : is_pmd_migration_entry is TRUE");
 		swp_entry_t entry;
 
 		entry = pmd_to_swp_entry(old_pmd);
@@ -2798,6 +3063,7 @@ static void __split_huge_pmd_locked(struct vm_area_struct *vma, pmd_t *pmd,
 		soft_dirty = pmd_swp_soft_dirty(old_pmd);
 		uffd_wp = pmd_swp_uffd_wp(old_pmd);
 	} else {
+		trace_printk("__split_huge_pmd_locked : is_pmd_migration_entry is FALSE");
 		page = pmd_page(old_pmd);
 		folio = page_folio(page);
 		if (pmd_dirty(old_pmd)) {
@@ -2874,18 +3140,34 @@ static void __split_huge_pmd_locked(struct vm_area_struct *vma, pmd_t *pmd,
 				swp_entry = make_migration_entry_young(swp_entry);
 			if (dirty)
 				swp_entry = make_migration_entry_dirty(swp_entry);
-			// TODO PROT Clem
+
+			// TODO Clem PROT
+			// trace_printk("Can we make the swap entry protnone : %d or %d", pmd_protnone(*pmd), pmd_protnone(old_pmd));
 			entry = swp_entry_to_pte(swp_entry);
 			if (soft_dirty)
 				entry = pte_swp_mksoft_dirty(entry);
 			if (uffd_wp)
 				entry = pte_swp_mkuffd_wp(entry);
 
+			// if (static_branch_likely(&sched_nb_split_shared_hugepages)) {
+			// 	// This way if the pmd was protnone, the protnone bit will be set in entry
+			// 	pgprot_t old_pmd_prot = pmd_pgprot(old_pmd);
+			// 	// pgprot_val(prot) &= ~_PAGE_GLOBAL;
+			// 	pgprot_t new_entry_prot = pte_pgprot(entry);
+			// 	pgprot_val(new_entry_prot) |= (pgprot_val(old_pmd_prot) & _PAGE_PROTNONE);
+			// 	// pgprot_val(prot) &= ~_PAGE_PROTNONE
+			// 	entry = pte_modify(entry, new_entry_prot);
+			// 	// HEREEEE
+			// }
+			
 			VM_WARN_ON(!pte_none(ptep_get(pte + i)));
+			// trace_printk("Is the new entry pte protnone : %d, is protnone set : %d", pte_protnone(entry), ((pte_flags(entry) & _PAGE_PROTNONE) == _PAGE_PROTNONE));
 			set_pte_at(mm, addr, pte + i, entry);
 		}
 	} else {
 		pte_t entry;
+
+		// TODO Clem Have a log here
 
 		entry = mk_pte(page, READ_ONCE(vma->vm_page_prot));
 		if (write)
@@ -2902,6 +3184,8 @@ static void __split_huge_pmd_locked(struct vm_area_struct *vma, pmd_t *pmd,
 
 		for (i = 0; i < HPAGE_PMD_NR; i++)
 			VM_WARN_ON(!pte_none(ptep_get(pte + i)));
+
+		trace_printk("__split_huge_pmd_locked -- Writing new entry");
 
 		set_ptes(mm, haddr, pte, entry, HPAGE_PMD_NR);
 	}
@@ -3036,6 +3320,48 @@ static void remap_page(struct folio *folio, unsigned long nr)
 		folio = folio_next(folio);
 	}
 }
+
+// For inspiration
+// /*
+//  * Get rid of all migration entries and replace them by
+//  * references to the indicated page.
+//  */
+// void remove_migration_ptes(struct folio *src, struct folio *dst, bool locked)
+// {
+// 	struct rmap_walk_control rwc = {
+// 		.rmap_one = remove_migration_pte,
+// 		.arg = src,
+// 	};
+
+// 	if (locked)
+// 		rmap_walk_locked(dst, &rwc);
+// 	else
+// 		rmap_walk(dst, &rwc);
+// }
+
+
+
+// static void make_page_protnone(struct folio *folio, unsigned long nr) {
+// 	struct rmap_walk_control rwc = {
+// 		.rmap_one = remove_migration_pte,
+// 		.arg = src,
+// 	};
+
+// 	// Mostly copied from remap_page and remove_migration_ptes
+// 	int i = 0;
+
+// 	/* If unmap_folio() uses try_to_migrate() on file, remove this check */
+// 	if (!folio_test_anon(folio))
+// 		return;
+// 	for (;;) {
+// 		rmap_walk_locked(dst, &rwc);
+// 		remove_migration_ptes(folio, folio, true);
+// 		i += folio_nr_pages(folio);
+// 		if (i >= nr)
+// 			break;
+// 		folio = folio_next(folio);
+// 	}
+// }
 
 static void lru_add_page_tail(struct page *head, struct page *tail,
 		struct lruvec *lruvec, struct list_head *list)
@@ -3470,6 +3796,7 @@ int split_huge_page_to_list_to_order(struct page *page, struct list_head *list,
 	}
 
 	trace_printk("split_huge_page_to_list_to_order proceeding to unmap folio");
+	// INFO Clem Crucial : This is what in turn puts the migration pte entries
 	unmap_folio(folio);
 
 	/* block interrupt reentry in xa_lock and spinlock */

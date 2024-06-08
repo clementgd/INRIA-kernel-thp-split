@@ -57,6 +57,8 @@
 
 #include "internal.h"
 
+extern struct static_key_false sched_nb_split_shared_hugepages;
+
 bool isolate_movable_page(struct page *page, isolate_mode_t mode)
 {
 	struct folio *folio = folio_get_nontail_page(page);
@@ -212,7 +214,6 @@ static bool remove_migration_pte(struct folio *folio,
 		// INFO Clem here is where the new ptes are created when splitted
 		pte = mk_pte(new, READ_ONCE(vma->vm_page_prot));
 		old_pte = ptep_get(pvmw.pte);
-		trace_printk("Is old pte protnone : %d", pte_protnone(old_pte));
 
 		entry = pte_to_swp_entry(old_pte);
 		if (!is_migration_entry_young(entry))
@@ -240,6 +241,7 @@ static bool remove_migration_pte(struct folio *folio,
 				entry = make_readable_device_private_entry(
 							page_to_pfn(new));
 			pte = swp_entry_to_pte(entry);
+			trace_printk("remove_migration_pte -- pte protnone bit set : %d,", ((pte_flags(pte) & _PAGE_PROTNONE) == _PAGE_PROTNONE));
 			if (pte_swp_soft_dirty(old_pte))
 				pte = pte_swp_mksoft_dirty(pte);
 			if (pte_swp_uffd_wp(old_pte))
@@ -282,6 +284,94 @@ static bool remove_migration_pte(struct folio *folio,
 
 	return true;
 }
+
+/*
+ * Restore a potential migration pte to a working pte entry
+ */
+// static bool mkprotnone_pte(struct folio *folio,
+// 		struct vm_area_struct *vma, unsigned long addr, void *old)
+// {
+// 	DEFINE_FOLIO_VMA_WALK(pvmw, old, vma, addr, PVMW_SYNC | PVMW_MIGRATION);
+
+// 	while (page_vma_mapped_walk(&pvmw)) {
+// 		rmap_t rmap_flags = RMAP_NONE;
+// 		pte_t old_pte;
+// 		pte_t pte;
+// 		swp_entry_t entry;
+// 		struct page *new;
+// 		unsigned long idx = 0;
+
+// 		/* pgoff is invalid for ksm pages, but they are never large */
+// 		if (folio_test_large(folio) && !folio_test_hugetlb(folio))
+// 			idx = linear_page_index(vma, pvmw.address) - pvmw.pgoff;
+// 		new = folio_page(folio, idx);
+
+// 		folio_get(folio);
+// 		// INFO Clem here is where the new ptes are created when splitted
+// 		pte = mk_pte(new, READ_ONCE(vma->vm_page_prot));
+// 		old_pte = ptep_get(pvmw.pte);
+
+// 		trace_printk("remove_migration_pte -- Old pte protnone bit set : %d,", ((pte_flags(old_pte) & _PAGE_PROTNONE) == _PAGE_PROTNONE));
+
+// 		entry = pte_to_swp_entry(old_pte);
+		
+// 		if (!is_migration_entry_young(entry))
+// 			pte = pte_mkold(pte);
+// 		if (folio_test_dirty(folio) && is_migration_entry_dirty(entry))
+// 			pte = pte_mkdirty(pte);
+// 		if (pte_swp_soft_dirty(old_pte))
+// 			pte = pte_mksoft_dirty(pte);
+// 		else
+// 			pte = pte_clear_soft_dirty(pte);
+
+// 		if (is_writable_migration_entry(entry))
+// 			pte = pte_mkwrite(pte, vma);
+// 		else if (pte_swp_uffd_wp(old_pte))
+// 			pte = pte_mkuffd_wp(pte);
+
+// 		if (folio_test_anon(folio) && !is_readable_migration_entry(entry))
+// 			rmap_flags |= RMAP_EXCLUSIVE;
+
+// 		if (unlikely(is_device_private_page(new))) {
+// 			if (pte_write(pte))
+// 				entry = make_writable_device_private_entry(
+// 							page_to_pfn(new));
+// 			else
+// 				entry = make_readable_device_private_entry(
+// 							page_to_pfn(new));
+// 			pte = swp_entry_to_pte(entry);
+// 			trace_printk("remove_migration_pte -- pte protnone bit set : %d,", ((pte_flags(pte) & _PAGE_PROTNONE) == _PAGE_PROTNONE));
+// 			if (pte_swp_soft_dirty(old_pte))
+// 				pte = pte_swp_mksoft_dirty(pte);
+// 			if (pte_swp_uffd_wp(old_pte))
+// 				pte = pte_swp_mkuffd_wp(pte);
+// 		}
+
+// 		// Checking if the PROT_NONE bit is set
+// 		if (static_branch_likely(&sched_nb_split_shared_hugepages) && (pte_flags(old_pte) & _PAGE_PROTNONE) != 0) {
+// 			trace_printk("Old pte has protnone set. Making sure : %d", ((pte_flags(old_pte) & _PAGE_PROTNONE) == _PAGE_PROTNONE));
+			
+// 		} else {
+// 			trace_printk("Old pte DOES NOT have protnone set. Making sure : %d", ((pte_flags(old_pte) & _PAGE_PROTNONE) == _PAGE_PROTNONE));
+// 		}
+
+// 		// if (folio_test_anon(folio))
+// 		// 	folio_add_anon_rmap_pte(folio, new, vma,
+// 		// 				pvmw.address, rmap_flags);
+// 		// else
+// 		// 	folio_add_file_rmap_pte(folio, new, vma);
+// 		pte = pte_modify(pte, PAGE_NONE);
+// 		set_pte_at(vma->vm_mm, pvmw.address, pvmw.pte, pte);
+// 		// if (vma->vm_flags & VM_LOCKED)
+// 		// 	mlock_drain_local();
+
+
+// 		/* No need to invalidate - it was non-present before */
+// 		update_mmu_cache(vma, pvmw.address, pvmw.pte);
+// 	}
+
+// 	return true;
+// }
 
 /*
  * Get rid of all migration entries and replace them by

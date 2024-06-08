@@ -1521,6 +1521,7 @@ static inline void update_mmu_cache_pud(struct vm_area_struct *vma,
 		unsigned long addr, pud_t *pud)
 {
 }
+// INFO Clem Page bits
 static inline pte_t pte_swp_mkexclusive(pte_t pte)
 {
 	return pte_set_flags(pte, _PAGE_SWP_EXCLUSIVE);

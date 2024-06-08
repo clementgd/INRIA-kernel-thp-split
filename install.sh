@@ -6,5 +6,5 @@ function pause(){
 }
 
 source build.sh
-pause
+# pause
 source deploy.sh

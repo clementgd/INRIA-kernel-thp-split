@@ -575,6 +575,7 @@ static inline pmd_t pmd_modify(pmd_t pmd, pgprot_t newprot)
 
 static inline pmd_t pmd_mkinvalid(pmd_t pmd)
 {
+	// INFO Clem setting bits
 	pmd_val(pmd) |= _PAGE_PRESENT_INVALID;
 	pmd_val(pmd) &= ~(_PAGE_PRESENT | _PAGE_VALID | _PAGE_DIRTY | _PAGE_PROTNONE);
 
@@ -601,7 +602,7 @@ static inline pmd_t pmdp_huge_get_and_clear(struct mm_struct *mm,
 #ifdef CONFIG_NUMA_BALANCING
 static inline long pte_protnone(pte_t pte)
 {
-	return (pte_val(pte) & _PAGE_PROTNONE);
+	return (pte_val(pte) & _PAGE_PROTNONE); // TODO Clem do __pte(pte_val(pte) | _PAGE_PROTNONE) ?
 }
 
 static inline long pmd_protnone(pmd_t pmd)
