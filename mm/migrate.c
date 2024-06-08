@@ -57,7 +57,7 @@
 
 #include "internal.h"
 
-extern struct static_key_false sched_nb_split_shared_hugepages;
+// extern struct static_key_false sched_nb_split_shared_hugepages;
 
 bool isolate_movable_page(struct page *page, isolate_mode_t mode)
 {
