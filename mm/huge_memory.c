@@ -1998,6 +1998,14 @@ static int split_thp_on_page_fault(struct folio *folio, struct vm_fault *vmf)
 		unsigned long end = addr + PMD_SIZE;
 
 		trace_printk("Setting PROT_NONE on [%016lx - %016lx]", addr, end);
+		// trace_printk("split_thp_on_page_fault -- PMD addr : %016lx", );
+		// trace_printk("split_thp_on_page_fault -- First pte pointer addr : %016lx", (pte_t *)pmd_page_vaddr(*pmd));
+		// (pte_t *)pmd_page_vaddr(*pmd) + pte_index(address)
+
+		unsigned long virt_addr = vmf->address;
+		unsigned long virt_end = vmf->address + PMD_SIZE;
+		trace_printk("Using virtual address the range becomes [%016lx - %016lx]", virt_addr, virt_end);
+
 
 
 		// change_prot_numa(vma, addr, end);
@@ -2049,6 +2057,8 @@ static int handle_unlock(struct vm_fault *vmf, int target_nid) {
 	*/
 	vmf->pte = pte_offset_map_nolock(vmf->vma->vm_mm, vmf->pmd,
 						vmf->address, &vmf->ptl);
+	// TODO Clem print info about folio
+	trace_printk("handle_unlock -- vmf->pte addr : %016lx", vmf->pte);
 	if (unlikely(!vmf->pte)) {
 		trace_printk("ERROR : handle_unlock Unable to find pte");
 		return -1;
@@ -2212,6 +2222,8 @@ vm_fault_t do_huge_pmd_numa_page(struct vm_fault *vmf)
 	folio = vm_normal_folio_pmd(vma, haddr, pmd);
 	if (!folio)
 		goto out_map;
+	trace_printk("do_huge_pmd_numa_page -- PMD addr : %016lx", vmf->pmd);
+	trace_printk("do_huge_pmd_numa_page -- Folio address : %016lx", folio_address(folio));
 
 	/* See similar comment in do_numa_page for explanation */
 	if (!writable)
