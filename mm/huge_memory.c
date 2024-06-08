@@ -73,6 +73,7 @@ static unsigned long deferred_split_scan(struct shrinker *shrink,
 					 struct shrink_control *sc);
 
 extern struct static_key_false sched_nb_split_shared_hugepages;
+extern struct static_key_false sched_nb_split_reapply_prot;
 
 static atomic_t huge_zero_refcount;
 struct page *huge_zero_page __read_mostly;
@@ -1997,8 +1998,10 @@ static int split_thp_on_page_fault(struct folio *folio, struct vm_fault *vmf)
 		trace_printk("VMA address space : [%016lx - %016lx]", vma->vm_start, vma->vm_end);
 		// TODO Clem would be best to have a custom function that avoids the pte of the page we are trying to save...
 		
-		// change_prot_numa(vma, vmf->address, vmf->address + PMD_SIZE);
-		// trace_printk("Successfully re-applied numa protections");
+		if (static_branch_unlikely(&sched_nb_split_reapply_prot)) {
+			change_prot_numa(vma, vmf->address, vmf->address + PMD_SIZE);
+			trace_printk("Successfully re-applied numa protections");
+		}
 
 		// unsigned long addr = (unsigned long) folio_address(folio);
 		// unsigned long end = addr + PMD_SIZE;
@@ -2064,7 +2067,7 @@ static int handle_unlock(struct vm_fault *vmf, int target_nid) {
 	vmf->pte = pte_offset_map_nolock(vmf->vma->vm_mm, vmf->pmd,
 						vmf->address, &vmf->ptl);
 	// TODO Clem print info about folio
-	trace_printk("handle_unlock -- vmf->pte addr : %016lx", vmf->pte);
+	trace_printk("handle_unlock -- vmf->pte addr : %016lx", (unsigned long) vmf->pte);
 	if (unlikely(!vmf->pte)) {
 		trace_printk("ERROR : handle_unlock Unable to find pte");
 		return -1;
@@ -2183,15 +2186,19 @@ out_map:
 	 * Make it present again, depending on how arch implements
 	 * non-accessible ptes, some can allow access by kernel mode.
 	 */
-	// old_pte = ptep_modify_prot_start(vma, vmf->address, vmf->pte);
-	// trace_printk("handle_unlock -- In out_map, Is old_pte protnone : %d", pte_protnone(old_pte));
-	// pte = pte_modify(old_pte, vma->vm_page_prot);
-	// pte = pte_mkyoung(pte);
-	// if (writable)
-	// 	pte = pte_mkwrite(pte, vma);
-	// ptep_modify_prot_commit(vma, vmf->address, vmf->pte, old_pte, pte);
-	// update_mmu_cache_range(vmf, vma, vmf->address, vmf->pte, 1);
-	trace_printk("Exiting handle_unlock with COMMENTED OUT protection restoration");
+
+	if (static_branch_unlikely(&sched_nb_split_reapply_prot)) {
+		old_pte = ptep_modify_prot_start(vma, vmf->address, vmf->pte);
+		trace_printk("handle_unlock -- In out_map, Is old_pte protnone : %d", pte_protnone(old_pte));
+		pte = pte_modify(old_pte, vma->vm_page_prot);
+		pte = pte_mkyoung(pte);
+		if (writable)
+			pte = pte_mkwrite(pte, vma);
+		ptep_modify_prot_commit(vma, vmf->address, vmf->pte, old_pte, pte);
+		update_mmu_cache_range(vmf, vma, vmf->address, vmf->pte, 1);
+		trace_printk("Exiting handle_unlock with protection restoration");
+	}
+	
 	pte_unmap_unlock(vmf->pte, vmf->ptl);
 	return 0;
 }
@@ -2229,8 +2236,8 @@ vm_fault_t do_huge_pmd_numa_page(struct vm_fault *vmf)
 	folio = vm_normal_folio_pmd(vma, haddr, pmd);
 	if (!folio)
 		goto out_map;
-	trace_printk("do_huge_pmd_numa_page -- PMD addr : %016lx", vmf->pmd);
-	trace_printk("do_huge_pmd_numa_page -- Folio address : %016lx", folio_address(folio));
+	trace_printk("do_huge_pmd_numa_page -- PMD addr : %016lx", (unsigned long) vmf->pmd);
+	trace_printk("do_huge_pmd_numa_page -- Folio address : %016lx", (unsigned long) folio_address(folio));
 
 	/* See similar comment in do_numa_page for explanation */
 	if (!writable)
