@@ -1666,6 +1666,8 @@ static bool try_to_unmap_one(struct folio *folio, struct vm_area_struct *vma,
 		/* Unexpected PMD-mapped THP? */
 		VM_BUG_ON_FOLIO(!pvmw.pte, folio);
 
+		// trace_printk("try_to_unmap_one -- pte addr : %016lx, folio_address(folio) : %016lx, pvmw->address : %016lx, vma : [%016lx, %016lx]", (unsigned long) pvmw.pte, (unsigned long) folio_address(folio), pvmw.address, vma->vm_start, vma->vm_end);
+
 		/*
 		 * If the folio is in an mlock()d vma, we must not swap it out.
 		 */
@@ -2017,6 +2019,8 @@ static bool try_to_migrate_one(struct folio *folio, struct vm_area_struct *vma,
 	mmu_notifier_invalidate_range_start(&range);
 
 	while (page_vma_mapped_walk(&pvmw)) {
+		// trace_printk("try_to_migrate_one -- pte addr : %016lx, folio_address(folio) : %016lx, pvmw->address : %016lx, vma : [%016lx, %016lx]", (unsigned long) pvmw.pte, (unsigned long) folio_address(folio), pvmw.address, vma->vm_start, vma->vm_end);
+
 #ifdef CONFIG_ARCH_ENABLE_THP_MIGRATION
 		/* PMD-mapped THP migration entry */
 		if (!pvmw.pte) {

@@ -126,6 +126,7 @@ static bool check_pte(struct page_vma_mapped_walk *pvmw)
 		pfn = pte_pfn(ptent);
 	}
 
+	// trace_printk("check_pte -- last verification. pfn = %016lx, pvmw->pfn = %016lx, pvmw->nr_pages = %lu", pfn, pvmw->pfn, pvmw->nr_pages);
 	return (pfn - pvmw->pfn) < pvmw->nr_pages;
 }
 
