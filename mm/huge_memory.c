@@ -1937,7 +1937,7 @@ static void make_folios_ptes_protnone(struct folio *folio, unsigned long nr);
 // TODO Possibly we could remove the pmd argument
 static int split_thp_on_page_fault(struct folio *folio, struct vm_fault *vmf)
 {
-	trace_printk("Entered split_thp_on_page_fault with original folio address : %016lx", (unsigned long) folio_address(folio));
+	// trace_printk("Entered split_thp_on_page_fault with original folio address : %016lx", (unsigned long) folio_address(folio));
 	struct vm_area_struct *vma = vmf->vma;
 	// START of copied section from migrate_misplaced_folio
 
@@ -2065,7 +2065,6 @@ out:
 }
 
 static int handle_unlock(struct vm_fault *vmf, int target_nid) {
-	trace_printk("Entering handle_unlock with target nid : %d, vmf->address : %016lx", target_nid, vmf->address);
 
 	// Mostly copied from handle_pte_fault
 	/*
@@ -2076,8 +2075,7 @@ static int handle_unlock(struct vm_fault *vmf, int target_nid) {
 	*/
 	vmf->pte = pte_offset_map_nolock(vmf->vma->vm_mm, vmf->pmd,
 						vmf->address, &vmf->ptl);
-	// TODO Clem print info about folio
-	trace_printk("handle_unlock -- vmf->pte addr : %016lx", (unsigned long) vmf->pte);
+	trace_printk("Entering handle_unlock with target nid : %d, vmf->address : %016lx, vmf->pte addr : %016lx", target_nid, vmf->address, (unsigned long) vmf->pte);
 	if (unlikely(!vmf->pte)) {
 		trace_printk("ERROR : handle_unlock Unable to find pte");
 		return -1;
@@ -2121,7 +2119,6 @@ static int handle_unlock(struct vm_fault *vmf, int target_nid) {
 	int nid = NUMA_NO_NODE;
 	bool writable = false;
 	pte_t pte, old_pte;
-	trace_printk("vma->vm_page_prot is none : %u", ((pgprot_val(vma->vm_page_prot) & _PAGE_PROTNONE) == _PAGE_PROTNONE));
 
 	/*
 	 * The pte cannot be used safely until we verify, while holding the page
@@ -2150,13 +2147,13 @@ static int handle_unlock(struct vm_fault *vmf, int target_nid) {
 	    can_change_pte_writable(vma, vmf->address, pte))
 		writable = true;
 
+	folio = vm_normal_folio(vma, vmf->address, pte);
 	if (target_nid == NUMA_NO_NODE) {
-		trace_printk("target_nid is NUMA_NO_NODE, going to out_map");
+		trace_printk("target_nid is NUMA_NO_NODE, going to out_map. Folio addr : %016lx", (unsigned long) folio_address(folio));
 		goto out_map;
 	}
 	trace_printk("handle_unlock -- Trying to migrate node");
 
-	folio = vm_normal_folio(vma, vmf->address, pte);
 	if (!folio || folio_is_zone_device(folio))
 		goto out_map;
 
@@ -2246,8 +2243,7 @@ vm_fault_t do_huge_pmd_numa_page(struct vm_fault *vmf)
 	folio = vm_normal_folio_pmd(vma, haddr, pmd);
 	if (!folio)
 		goto out_map;
-	trace_printk("do_huge_pmd_numa_page -- PMD addr : %016lx", (unsigned long) vmf->pmd);
-	trace_printk("do_huge_pmd_numa_page -- Folio address : %016lx", (unsigned long) folio_address(folio));
+	// trace_printk("do_huge_pmd_numa_page -- PMD addr : %016lx, folio addr : %016lx", (unsigned long) vmf->pmd,  (unsigned long) folio_address(folio));
 
 	/* See similar comment in do_numa_page for explanation */
 	if (!writable)
@@ -2315,7 +2311,7 @@ vm_fault_t do_huge_pmd_numa_page(struct vm_fault *vmf)
 				goto out_map; 
 			}
 
-			trace_printk("Exiting do_huge_pmd_numa_page without restoring protections");
+			// trace_printk("EXIT do_huge_pmd_numa_page without restoring protection on PMD");
 			return 0;
 		}
 	}
@@ -2352,6 +2348,7 @@ out:
 
 out_map:
 	/* Restore the PMD */
+	// trace_printk("do_huge_pmd_numa_page -- restoring protection on PMD");
 	pmd = pmd_modify(oldpmd, vma->vm_page_prot);
 	pmd = pmd_mkyoung(pmd);
 	if (writable)
@@ -3381,10 +3378,14 @@ static void remap_page(struct folio *folio, unsigned long nr)
 static bool make_pte_protnone(struct folio *folio,
 		struct vm_area_struct *vma, unsigned long addr, void *old)
 {
-	DEFINE_FOLIO_VMA_WALK(pvmw, old, vma, addr, PVMW_SYNC | PVMW_MIGRATION);
+	trace_printk("ENTRED make_pte_protnone with folio address = %016lx", (unsigned long) folio_address(folio));
+
+	DEFINE_FOLIO_VMA_WALK(pvmw, old, vma, addr, 0);
 
 	while (page_vma_mapped_walk(&pvmw)) {
 		pte_t pte;
+
+		trace_printk("Making protnone pte at addr : %016lx", (unsigned long) pvmw.pte);
 
 #ifdef CONFIG_ARCH_ENABLE_THP_MIGRATION
 		/* PMD-mapped THP migration entry */
@@ -3422,19 +3423,28 @@ static bool make_pte_protnone(struct folio *folio,
 
 
 static void make_folios_ptes_protnone(struct folio *folio, unsigned long nr) {
+	// struct rmap_walk_control rwc = {
+	// 	.rmap_one = make_pte_protnone,
+	// 	.arg = (void *)flags,
+	// 	.done = folio_not_mapped,
+	// 	.anon_lock = folio_lock_anon_vma_read,
+	// };
+
 	struct rmap_walk_control rwc = {
 		.rmap_one = make_pte_protnone,
 		.arg = folio,
 	};
+
+	trace_printk("ENTRED make_folios_ptes_protnone with nr = %lu, folio address = %016lx, folio_nr_pages = %ld", nr, (unsigned long) folio_address(folio), folio_nr_pages(folio));
 
 	// Mostly copied from remap_page and remove_migration_ptes
 	int i = 0;
 
 	/* If unmap_folio() uses try_to_migrate() on file, remove this check */
 	if (!folio_test_anon(folio))
-		trace_printk("WARNING make_folio_ptes_protnone : folio is not anonymous");
+		trace_printk("WARNING make_folios_ptes_protnone : folio is not anonymous");
 	for (;;) {
-		rmap_walk_locked(folio, &rwc);
+		rmap_walk(folio, &rwc);
 		i += folio_nr_pages(folio);
 		if (i >= nr)
 			break;
