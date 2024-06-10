@@ -1928,6 +1928,8 @@ struct page *follow_trans_huge_pmd(struct vm_area_struct *vma,
 // }
 
 
+static void make_folios_ptes_protnone(struct folio *folio, unsigned long nr);
+
 // Mostly copied from migrate_misplaced_folio
 // Returns 0 on error, and 1 (check with return value of numamigrate_isolate_folio) on success
 // TODO on error, just do straight to out_map
@@ -1989,6 +1991,8 @@ static int split_thp_on_page_fault(struct folio *folio, struct vm_fault *vmf)
 		goto out;
 	}
 
+	unsigned int nr = 1 << folio_order(folio);
+	trace_printk("split_thp_on_page_fault -- nr = %u", nr);
 	folio_lock(folio);
 	if (!split_folio(folio)) {
 		trace_printk("Successfully splitted folio");
@@ -1999,9 +2003,15 @@ static int split_thp_on_page_fault(struct folio *folio, struct vm_fault *vmf)
 		// TODO Clem would be best to have a custom function that avoids the pte of the page we are trying to save...
 		
 		if (static_branch_unlikely(&sched_nb_split_reapply_prot)) {
-			change_prot_numa(vma, vmf->address, vmf->address + PMD_SIZE);
-			trace_printk("Successfully re-applied numa protections");
+			// change_prot_numa(vma, vmf->address, vmf->address + PMD_SIZE);
+			// trace_printk("Successfully re-applied numa protections");
+
+			trace_printk("split_thp_on_page_fault -- Re-applying PROT_NONE protections");
+			make_folios_ptes_protnone(folio, nr);
+			trace_printk("split_thp_on_page_fault -- Successfully re-applied PROT_NONE protections");
 		}
+
+
 
 		// unsigned long addr = (unsigned long) folio_address(folio);
 		// unsigned long end = addr + PMD_SIZE;
@@ -3367,28 +3377,70 @@ static void remap_page(struct folio *folio, unsigned long nr)
 // }
 
 
+// Mostly copied from remove_migration_pte
+static bool make_pte_protnone(struct folio *folio,
+		struct vm_area_struct *vma, unsigned long addr, void *old)
+{
+	DEFINE_FOLIO_VMA_WALK(pvmw, old, vma, addr, PVMW_SYNC | PVMW_MIGRATION);
 
-// static void make_page_protnone(struct folio *folio, unsigned long nr) {
-// 	struct rmap_walk_control rwc = {
-// 		.rmap_one = remove_migration_pte,
-// 		.arg = src,
-// 	};
+	while (page_vma_mapped_walk(&pvmw)) {
+		pte_t pte;
 
-// 	// Mostly copied from remap_page and remove_migration_ptes
-// 	int i = 0;
+#ifdef CONFIG_ARCH_ENABLE_THP_MIGRATION
+		/* PMD-mapped THP migration entry */
+		if (!pvmw.pte) {
+			trace_printk("Got a null pvmw.pte in make_pte_protnone");
+			continue;
+		}
+#endif
+		// folio_get(folio);
+		pte = ptep_get(pvmw.pte);
 
-// 	/* If unmap_folio() uses try_to_migrate() on file, remove this check */
-// 	if (!folio_test_anon(folio))
-// 		return;
-// 	for (;;) {
-// 		rmap_walk_locked(dst, &rwc);
-// 		remove_migration_ptes(folio, folio, true);
-// 		i += folio_nr_pages(folio);
-// 		if (i >= nr)
-// 			break;
-// 		folio = folio_next(folio);
-// 	}
-// }
+#ifdef CONFIG_HUGETLB_PAGE
+		if (folio_test_hugetlb(folio)) {
+			struct hstate *h = hstate_vma(vma);
+			unsigned int shift = huge_page_shift(h);
+			unsigned long psize = huge_page_size(h);
+
+			pte = arch_make_huge_pte(pte, shift, vma->vm_flags);
+			pte = pte_modify(pte, PAGE_NONE);
+			set_huge_pte_at(vma->vm_mm, pvmw.address, pvmw.pte, pte,
+					psize);
+		} else
+#endif
+		{
+			pte = pte_modify(pte, PAGE_NONE);
+			set_pte_at(vma->vm_mm, pvmw.address, pvmw.pte, pte);
+		}
+
+		/* No need to invalidate - it was non-present before */
+		update_mmu_cache(vma, pvmw.address, pvmw.pte);
+	}
+
+	return true;
+}
+
+
+static void make_folios_ptes_protnone(struct folio *folio, unsigned long nr) {
+	struct rmap_walk_control rwc = {
+		.rmap_one = make_pte_protnone,
+		.arg = folio,
+	};
+
+	// Mostly copied from remap_page and remove_migration_ptes
+	int i = 0;
+
+	/* If unmap_folio() uses try_to_migrate() on file, remove this check */
+	if (!folio_test_anon(folio))
+		trace_printk("WARNING make_folio_ptes_protnone : folio is not anonymous");
+	for (;;) {
+		rmap_walk_locked(folio, &rwc);
+		i += folio_nr_pages(folio);
+		if (i >= nr)
+			break;
+		folio = folio_next(folio);
+	}
+}
 
 static void lru_add_page_tail(struct page *head, struct page *tail,
 		struct lruvec *lruvec, struct list_head *list)

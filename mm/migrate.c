@@ -185,6 +185,7 @@ void putback_movable_pages(struct list_head *l)
 static bool remove_migration_pte(struct folio *folio,
 		struct vm_area_struct *vma, unsigned long addr, void *old)
 {
+	// 2nd argument is folio used to construct struct page_vma_mapped_walk
 	DEFINE_FOLIO_VMA_WALK(pvmw, old, vma, addr, PVMW_SYNC | PVMW_MIGRATION);
 
 	while (page_vma_mapped_walk(&pvmw)) {
