@@ -1999,14 +1999,14 @@ static int split_thp_on_page_fault(struct folio *folio, struct vm_fault *vmf)
 		// folio_address() of the resulting folio is PMD aligned, so we can just replace pte range from that address until the end of the pmd that we can get via the function 
 		// Copied from change_prot_numa
 
-		trace_printk("VMA address space : [%016lx - %016lx]", vma->vm_start, vma->vm_end);
+		// trace_printk("VMA address space : [%016lx - %016lx]", vma->vm_start, vma->vm_end);
 		// TODO Clem would be best to have a custom function that avoids the pte of the page we are trying to save...
 		
 		if (static_branch_unlikely(&sched_nb_split_reapply_prot)) {
 			// change_prot_numa(vma, vmf->address, vmf->address + PMD_SIZE);
 			// trace_printk("Successfully re-applied numa protections");
 
-			trace_printk("split_thp_on_page_fault -- Re-applying PROT_NONE protections");
+			// trace_printk("split_thp_on_page_fault -- Re-applying PROT_NONE protections");
 			make_folios_ptes_protnone(folio, nr);
 			trace_printk("split_thp_on_page_fault -- Successfully re-applied PROT_NONE protections");
 		}
@@ -2049,7 +2049,7 @@ static int split_thp_on_page_fault(struct folio *folio, struct vm_fault *vmf)
 		// TODO Clem make all the protections protnone, given the pmd
 		// For that we can probably use the folio address
 		// To test that idea, get the PMD address mask
-		trace_printk("PMD_MASK = %016lx, PTE_MASK (actual name is PAGE_MASK) = %016lx", PMD_MASK, PAGE_MASK);
+		// trace_printk("PMD_MASK = %016lx, PTE_MASK (actual name is PAGE_MASK) = %016lx", PMD_MASK, PAGE_MASK);
 		ret = 1;
 	} else {
 		trace_printk("Unable to split folio");
@@ -2127,7 +2127,7 @@ static int handle_unlock(struct vm_fault *vmf, int target_nid) {
 	/* Read the live PTE from the page tables: */
 	old_pte = ptep_get(vmf->pte);
 
-	trace_printk("Is old_pte protnone : %d", pte_protnone(old_pte));
+	// trace_printk("Is old_pte protnone : %d", pte_protnone(old_pte));
 
 	if (unlikely(!pte_same(old_pte, vmf->orig_pte))) {
 		pte_unmap_unlock(vmf->pte, vmf->ptl);
@@ -2195,7 +2195,7 @@ out_map:
 
 	if (static_branch_unlikely(&sched_nb_split_reapply_prot)) {
 		old_pte = ptep_modify_prot_start(vma, vmf->address, vmf->pte);
-		trace_printk("handle_unlock -- In out_map, Is old_pte protnone : %d", pte_protnone(old_pte));
+		// trace_printk("handle_unlock -- In out_map, Is old_pte protnone : %d", pte_protnone(old_pte));
 		pte = pte_modify(old_pte, vma->vm_page_prot);
 		pte = pte_mkyoung(pte);
 		if (writable)
@@ -3083,7 +3083,7 @@ static void __split_huge_pmd_locked(struct vm_area_struct *vma, pmd_t *pmd,
 
 	pmd_migration = is_pmd_migration_entry(old_pmd);
 	if (unlikely(pmd_migration)) {
-		trace_printk("__split_huge_pmd_locked : is_pmd_migration_entry is TRUE");
+		// trace_printk("__split_huge_pmd_locked : is_pmd_migration_entry is TRUE");
 		swp_entry_t entry;
 
 		entry = pmd_to_swp_entry(old_pmd);
@@ -3096,7 +3096,7 @@ static void __split_huge_pmd_locked(struct vm_area_struct *vma, pmd_t *pmd,
 		soft_dirty = pmd_swp_soft_dirty(old_pmd);
 		uffd_wp = pmd_swp_uffd_wp(old_pmd);
 	} else {
-		trace_printk("__split_huge_pmd_locked : is_pmd_migration_entry is FALSE");
+		// trace_printk("__split_huge_pmd_locked : is_pmd_migration_entry is FALSE");
 		page = pmd_page(old_pmd);
 		folio = page_folio(page);
 		if (pmd_dirty(old_pmd)) {
@@ -3194,7 +3194,7 @@ static void __split_huge_pmd_locked(struct vm_area_struct *vma, pmd_t *pmd,
 			// }
 			
 			VM_WARN_ON(!pte_none(ptep_get(pte + i)));
-			trace_printk("__split_huge_pmd_locked -- new PTE entry at %016lx, protnone : %d", (unsigned long) (pte + i), ((pte_flags(entry) & _PAGE_PROTNONE) == _PAGE_PROTNONE));
+			// trace_printk("__split_huge_pmd_locked -- new PTE entry at %016lx, protnone : %d", (unsigned long) (pte + i), ((pte_flags(entry) & _PAGE_PROTNONE) == _PAGE_PROTNONE));
 			set_pte_at(mm, addr, pte + i, entry);
 		}
 	} else {
@@ -3377,14 +3377,12 @@ static void remap_page(struct folio *folio, unsigned long nr)
 static bool make_pte_protnone(struct folio *folio,
 		struct vm_area_struct *vma, unsigned long addr, void *old)
 {
-	trace_printk("ENTRED make_pte_protnone with folio address = %016lx", (unsigned long) folio_address(folio));
-
 	DEFINE_FOLIO_VMA_WALK(pvmw, old, vma, addr, 0);
 
 	while (page_vma_mapped_walk(&pvmw)) {
 		pte_t pte;
 
-		trace_printk("make_pte_protnone -- pte addr : %016lx, folio_address(folio) : %016lx, pvmw->address : %016lx, vma : [%016lx, %016lx]", (unsigned long) pvmw.pte, (unsigned long) folio_address(folio), pvmw.address, vma->vm_start, vma->vm_end);
+		// trace_printk("make_pte_protnone -- pte addr : %016lx, folio_address(folio) : %016lx, pvmw->address : %016lx, vma : [%016lx, %016lx]", (unsigned long) pvmw.pte, (unsigned long) folio_address(folio), pvmw.address, vma->vm_start, vma->vm_end);
 
 #ifdef CONFIG_ARCH_ENABLE_THP_MIGRATION
 		/* PMD-mapped THP migration entry */
@@ -3422,20 +3420,6 @@ static bool make_pte_protnone(struct folio *folio,
 
 
 static void make_folios_ptes_protnone(struct folio *folio, unsigned long nr) {
-	// struct rmap_walk_control rwc = {
-	// 	.rmap_one = make_pte_protnone,
-	// 	.arg = (void *)flags,
-	// 	.done = folio_not_mapped,
-	// 	.anon_lock = folio_lock_anon_vma_read,
-	// };
-
-	// struct rmap_walk_control rwc = {
-	// 	.rmap_one = make_pte_protnone,
-	// 	.arg = folio,
-	// };
-
-	trace_printk("ENTRED make_folios_ptes_protnone with nr = %lu, folio address = %016lx, folio_nr_pages = %ld", nr, (unsigned long) folio_address(folio), folio_nr_pages(folio));
-
 	// Mostly copied from remap_page and remove_migration_ptes
 	int i = 0;
 
@@ -3443,6 +3427,7 @@ static void make_folios_ptes_protnone(struct folio *folio, unsigned long nr) {
 	if (!folio_test_anon(folio))
 		trace_printk("WARNING make_folios_ptes_protnone : folio is not anonymous");
 	for (;;) {
+		// Need to create a new one everytime because need the .arg to be different
 		struct rmap_walk_control rwc = {
 			.rmap_one = make_pte_protnone,
 			.arg = folio,
@@ -3583,7 +3568,7 @@ static void __split_huge_page_tail(struct folio *folio, int tail,
 static void __split_huge_page(struct page *page, struct list_head *list,
 		pgoff_t end, unsigned int new_order)
 {
-	trace_printk("ENTERING __split_huge_page");
+	// trace_printk("ENTERING __split_huge_page");
 
 	struct folio *folio = page_folio(page);
 	struct page *head = &folio->page;
