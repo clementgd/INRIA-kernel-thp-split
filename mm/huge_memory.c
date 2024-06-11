@@ -2050,7 +2050,6 @@ static int split_thp_on_page_fault(struct folio *folio, struct vm_fault *vmf)
 		// For that we can probably use the folio address
 		// To test that idea, get the PMD address mask
 		trace_printk("PMD_MASK = %016lx, PTE_MASK (actual name is PAGE_MASK) = %016lx", PMD_MASK, PAGE_MASK);
-		trace_printk("Result of folio address : %016lx", (unsigned long) folio_address(folio));
 		ret = 1;
 	} else {
 		trace_printk("Unable to split folio");
@@ -3195,7 +3194,7 @@ static void __split_huge_pmd_locked(struct vm_area_struct *vma, pmd_t *pmd,
 			// }
 			
 			VM_WARN_ON(!pte_none(ptep_get(pte + i)));
-			// trace_printk("Is the new entry pte protnone : %d, is protnone set : %d", pte_protnone(entry), ((pte_flags(entry) & _PAGE_PROTNONE) == _PAGE_PROTNONE));
+			trace_printk("__split_huge_pmd_locked -- new PTE entry at %016lx, protnone : %d", (unsigned long) (pte + i), ((pte_flags(entry) & _PAGE_PROTNONE) == _PAGE_PROTNONE));
 			set_pte_at(mm, addr, pte + i, entry);
 		}
 	} else {
@@ -3385,7 +3384,7 @@ static bool make_pte_protnone(struct folio *folio,
 	while (page_vma_mapped_walk(&pvmw)) {
 		pte_t pte;
 
-		trace_printk("Making protnone pte at addr : %016lx", (unsigned long) pvmw.pte);
+		trace_printk("make_pte_protnone -- pte addr : %016lx, folio_address(folio) : %016lx, pvmw->address : %016lx, vma : [%016lx, %016lx]", (unsigned long) pvmw.pte, (unsigned long) folio_address(folio), pvmw.address, vma->vm_start, vma->vm_end);
 
 #ifdef CONFIG_ARCH_ENABLE_THP_MIGRATION
 		/* PMD-mapped THP migration entry */
@@ -3430,10 +3429,10 @@ static void make_folios_ptes_protnone(struct folio *folio, unsigned long nr) {
 	// 	.anon_lock = folio_lock_anon_vma_read,
 	// };
 
-	struct rmap_walk_control rwc = {
-		.rmap_one = make_pte_protnone,
-		.arg = folio,
-	};
+	// struct rmap_walk_control rwc = {
+	// 	.rmap_one = make_pte_protnone,
+	// 	.arg = folio,
+	// };
 
 	trace_printk("ENTRED make_folios_ptes_protnone with nr = %lu, folio address = %016lx, folio_nr_pages = %ld", nr, (unsigned long) folio_address(folio), folio_nr_pages(folio));
 
@@ -3444,7 +3443,11 @@ static void make_folios_ptes_protnone(struct folio *folio, unsigned long nr) {
 	if (!folio_test_anon(folio))
 		trace_printk("WARNING make_folios_ptes_protnone : folio is not anonymous");
 	for (;;) {
-		rmap_walk(folio, &rwc);
+		struct rmap_walk_control rwc = {
+			.rmap_one = make_pte_protnone,
+			.arg = folio,
+		};
+		rmap_walk_locked(folio, &rwc);
 		i += folio_nr_pages(folio);
 		if (i >= nr)
 			break;

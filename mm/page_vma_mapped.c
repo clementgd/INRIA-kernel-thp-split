@@ -120,12 +120,15 @@ static bool check_pte(struct page_vma_mapped_walk *pvmw)
 
 		pfn = swp_offset_pfn(entry);
 	} else {
-		if (!pte_present(ptent))
+		if (!pte_present(ptent)) {
+			trace_printk("check_pte -- (!pte_present(ptent))");
 			return false;
+		}
 
 		pfn = pte_pfn(ptent);
 	}
 
+	trace_printk("check_pte -- last verification. pfn = %016lx, pvmw->pfn = %016lx, pvmw->nr_pages = %lu", pfn, pvmw->pfn, pvmw->nr_pages);
 	return (pfn - pvmw->pfn) < pvmw->nr_pages;
 }
 
@@ -182,10 +185,13 @@ bool page_vma_mapped_walk(struct page_vma_mapped_walk *pvmw)
 	pmd_t pmde;
 
 	/* The only possible pmd mapping has been handled on last iteration */
-	if (pvmw->pmd && !pvmw->pte)
+	if (pvmw->pmd && !pvmw->pte) {
+		trace_printk("page_vma_mapped_walk -- (pvmw->pmd && !pvmw->pte), returning none");
 		return not_found(pvmw);
+	}
 
 	if (unlikely(is_vm_hugetlb_page(vma))) {
+		trace_printk("page_vma_mapped_walk -- (is_vm_hugetlb_page(vma))");
 		struct hstate *hstate = hstate_vma(vma);
 		unsigned long size = huge_page_size(hstate);
 		/* The only possible mapping was handled on last iteration */
@@ -237,6 +243,7 @@ restart:
 
 		if (pmd_trans_huge(pmde) || is_pmd_migration_entry(pmde) ||
 		    (pmd_present(pmde) && pmd_devmap(pmde))) {
+			trace_printk("page_vma_mapped_walk -- case 1");
 			pvmw->ptl = pmd_lock(mm, pvmw->pmd);
 			pmde = *pvmw->pmd;
 			if (!pmd_present(pmde)) {
@@ -262,6 +269,7 @@ restart:
 			spin_unlock(pvmw->ptl);
 			pvmw->ptl = NULL;
 		} else if (!pmd_present(pmde)) {
+			trace_printk("page_vma_mapped_walk -- (!pmd_present(pmde))");
 			/*
 			 * If PVMW_SYNC, take and drop THP pmd lock so that we
 			 * cannot return prematurely, while zap_huge_pmd() has
@@ -279,24 +287,33 @@ restart:
 			continue;
 		}
 		if (!map_pte(pvmw, &ptl)) {
+			trace_printk("page_vma_mapped_walk -- (!map_pte(pvmw, &ptl))");
 			if (!pvmw->pte)
 				goto restart;
 			goto next_pte;
 		}
 this_pte:
-		if (check_pte(pvmw))
+		if (check_pte(pvmw)) {
+			trace_printk("page_vma_mapped_walk -- check_pte COMPLETED");
 			return true;
+		} else {
+			trace_printk("page_vma_mapped_walk -- check_pte FAILED");
+		}
 next_pte:
 		do {
+			trace_printk("page_vma_mapped_walk -- Fetching next PTE. Current is at : %016lx", (unsigned long) pvmw->pte);
 			pvmw->address += PAGE_SIZE;
-			if (pvmw->address >= end)
+			if (pvmw->address >= end) {
+				trace_printk("page_vma_mapped_walk -- (pvmw->address >= end) : %016lx >= %016lx", pvmw->address, end);
 				return not_found(pvmw);
+			}
 			/* Did we cross page table boundary? */
 			if ((pvmw->address & (PMD_SIZE - PAGE_SIZE)) == 0) {
 				if (pvmw->ptl) {
 					spin_unlock(pvmw->ptl);
 					pvmw->ptl = NULL;
 				}
+				trace_printk("page_vma_mapped_walk -- about to unmap");
 				pte_unmap(pvmw->pte);
 				pvmw->pte = NULL;
 				goto restart;
@@ -308,6 +325,7 @@ next_pte:
 			pvmw->ptl = ptl;
 			spin_lock(pvmw->ptl);
 		}
+		trace_printk("page_vma_mapped_walk -- about to goto this_pte");
 		goto this_pte;
 	} while (pvmw->address < end);
 

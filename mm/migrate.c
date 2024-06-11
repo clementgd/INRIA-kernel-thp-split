@@ -196,6 +196,8 @@ static bool remove_migration_pte(struct folio *folio,
 		struct page *new;
 		unsigned long idx = 0;
 
+		trace_printk("remove_migration_pte -- pte addr : %016lx, folio_address(folio) : %016lx, pvmw->address : %016lx, vma : [%016lx, %016lx]", (unsigned long) pvmw.pte, (unsigned long) folio_address(folio), pvmw.address, vma->vm_start, vma->vm_end);
+
 		/* pgoff is invalid for ksm pages, but they are never large */
 		if (folio_test_large(folio) && !folio_test_hugetlb(folio))
 			idx = linear_page_index(vma, pvmw.address) - pvmw.pgoff;
