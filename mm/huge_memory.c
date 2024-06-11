@@ -74,6 +74,8 @@ static unsigned long deferred_split_scan(struct shrinker *shrink,
 
 extern struct static_key_false sched_nb_split_shared_hugepages;
 extern struct static_key_false sched_nb_split_reapply_prot;
+extern unsigned int sysctl_numa_balancing_scan_period_min;
+extern unsigned int sysctl_numa_balancing_scan_period_max;
 
 static atomic_t huge_zero_refcount;
 struct page *huge_zero_page __read_mostly;
@@ -2164,6 +2166,7 @@ out_map:
 /* NUMA hinting page fault entry point for trans huge pmds */
 vm_fault_t do_huge_pmd_numa_page(struct vm_fault *vmf)
 {
+	struct task_struct *p = current;
 	struct vm_area_struct *vma = vmf->vma;
 	pmd_t oldpmd = vmf->orig_pmd;
 	pmd_t pmd;
@@ -2209,21 +2212,7 @@ vm_fault_t do_huge_pmd_numa_page(struct vm_fault *vmf)
 	if (node_is_toptier(nid))
 		last_cpupid = folio_last_cpupid(folio);
 
-	/*
-	Clem
-	- split_folio and in turn split_huge_page_to_list_to_order automatically handles unmapping and remapping pages so there should not be any issues on that end
-	- Basically what I want to do is introduce as little changes as possible to split the folios but then don't do anything to them, don't try to migrate them
-	- Only issue is now I would need to handle making the required folio accessible again, while leaving all the others in protnone and hoping they will get touch-migrated
-	- TODO : Investigate what happens when we split folios -> __split_huge_page
 
-
-	2 cases :
-	1. Different cpu node and folio node : only split if result of numa_migrate_prep is NUMA_NO_NODE ?
-	2. Different cpu nodes between 2 accesses : split, and migration to cpu node if different from folio nid
-	*/
-
-
-	// Case 2
 	if (static_branch_likely(&sched_nb_split_shared_hugepages) && this_cpu_nid != nid) {
 		trace_printk("Attempting aggressive page split : curr cpu node = %d, folio node : %d", this_cpu_nid, nid);
 		
@@ -2239,6 +2228,13 @@ vm_fault_t do_huge_pmd_numa_page(struct vm_fault *vmf)
 			flags |= TNF_FAULT_LOCAL;
 		}
 		// END of copy paste from numa_migrate_prep
+
+		// The lower we go the faster we are going to scan
+		int old_numa_scan_period = p->numa_scan_period;
+		p->numa_scan_period = clamp(sysctl_numa_balancing_scan_period_min * 2,
+			sysctl_numa_balancing_scan_period_min, (p->numa_scan_period * 6) / 10);
+		trace_printk("Lowered NUMAB scan period from %u to %u ms", old_numa_scan_period, p->numa_scan_period);
+		// Min and max
 
 		// Mostly copy pasted from section below
 		spin_unlock(vmf->ptl);
@@ -2257,6 +2253,11 @@ vm_fault_t do_huge_pmd_numa_page(struct vm_fault *vmf)
 
 		// trace_printk("EXIT do_huge_pmd_numa_page without restoring protection on PMD");
 		return 0;
+	} else {
+		int old_numa_scan_period = p->numa_scan_period;
+		p->numa_scan_period = clamp((p->numa_scan_period * 12) / 10,
+			sysctl_numa_balancing_scan_period_min, sysctl_numa_balancing_scan_period_max);
+		trace_printk("Increased NUMAB scan period from %u to %u ms", old_numa_scan_period, p->numa_scan_period);
 	}
 
 	target_nid = numa_migrate_prep(folio, vma, haddr, nid, &flags);
