@@ -1363,6 +1363,8 @@ adjust_numa_imbalance(int imbalance, int dst_running, int imb_numa_nr)
  */
 unsigned int sysctl_numa_balancing_scan_period_min = 1000;
 unsigned int sysctl_numa_balancing_scan_period_max = 60000;
+// unsigned int sysctl_numa_balancing_split_period = 5; // ms
+// TODO Clem make this changeable ?
 
 /* Portion of address space to scan in MB */
 unsigned int sysctl_numa_balancing_scan_size = 256;
@@ -2919,7 +2921,7 @@ static void task_numa_placement(struct task_struct *p)
 			sched_setnuma(p, max_nid);
 	}
 
-	update_task_scan_period(p, fault_types[0], fault_types[1]);
+	// update_task_scan_period(p, fault_types[0], fault_types[1]);
 }
 
 static inline int get_numa_group(struct numa_group *grp)
@@ -3238,9 +3240,10 @@ static void task_numa_work(struct callback_head *work)
 	if (p->flags & PF_EXITING)
 		return;
 
+	// TODO Clem : check out if this is ever initialized
 	if (!mm->numa_next_scan) {
 		mm->numa_next_scan = now +
-			msecs_to_jiffies(sysctl_numa_balancing_scan_period_max);
+			msecs_to_jiffies(p->numa_scan_period);
 	}
 
 	/*
@@ -3255,7 +3258,7 @@ static void task_numa_work(struct callback_head *work)
 		p->numa_scan_period = task_scan_start(p);
 	}
 
-	next_scan = now + msecs_to_jiffies(sysctl_numa_balancing_scan_period_max);
+	next_scan = now + msecs_to_jiffies(p->numa_scan_period);
 	if (!try_cmpxchg(&mm->numa_next_scan, &migrate, next_scan))
 		return;
 
@@ -3469,7 +3472,7 @@ void init_numa_balancing(unsigned long clone_flags, struct task_struct *p)
 	}
 	p->node_stamp			= 0;
 	p->numa_scan_seq		= mm ? mm->numa_scan_seq : 0;
-	p->numa_scan_period		= sysctl_numa_balancing_scan_delay;
+	p->numa_scan_period		= sysctl_numa_balancing_scan_delay; // TODO Clem make this the min scan period ?
 	p->numa_migrate_retry		= 0;
 	/* Protect against double add, see task_tick_numa and task_numa_work */
 	p->numa_work.next		= &p->numa_work;
@@ -3508,7 +3511,7 @@ void init_numa_balancing(unsigned long clone_flags, struct task_struct *p)
 static void task_tick_numa(struct rq *rq, struct task_struct *curr)
 {
 	struct callback_head *work = &curr->numa_work;
-	u64 period, now;
+	// u64 period, now;
 
 	/*
 	 * We don't care about NUMA placement if we don't have memory.
@@ -3522,8 +3525,8 @@ static void task_tick_numa(struct rq *rq, struct task_struct *curr)
 	 * task needs to have done some actual work before we bother with
 	 * NUMA placement.
 	 */
-	now = curr->se.sum_exec_runtime;
-	period = (u64)curr->numa_scan_period * NSEC_PER_MSEC;
+	// now = curr->se.sum_exec_runtime;
+	// period = (u64)curr->numa_scan_period * NSEC_PER_MSEC;
 
 	// if (now > curr->node_stamp + period) {
 	// 	if (!curr->node_stamp)
@@ -3539,6 +3542,7 @@ static void task_tick_numa(struct rq *rq, struct task_struct *curr)
 	
 }
 
+// TODO Clem wtf does that do ?
 static void update_scan_period(struct task_struct *p, int new_cpu)
 {
 	int src_nid = cpu_to_node(task_cpu(p));
