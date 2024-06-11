@@ -2170,6 +2170,7 @@ vm_fault_t do_huge_pmd_numa_page(struct vm_fault *vmf)
 	struct folio *folio;
 	unsigned long haddr = vmf->address & HPAGE_PMD_MASK;
 	int nid = NUMA_NO_NODE;
+	int this_cpu_nid = numa_node_id();
 	int target_nid, last_cpupid = (-1 & LAST_CPUPID_MASK);
 	bool migrated = false, writable = false;
 	int flags = 0;
@@ -2208,7 +2209,6 @@ vm_fault_t do_huge_pmd_numa_page(struct vm_fault *vmf)
 	if (node_is_toptier(nid))
 		last_cpupid = folio_last_cpupid(folio);
 
-
 	/*
 	Clem
 	- split_folio and in turn split_huge_page_to_list_to_order automatically handles unmapping and remapping pages so there should not be any issues on that end
@@ -2224,32 +2224,55 @@ vm_fault_t do_huge_pmd_numa_page(struct vm_fault *vmf)
 
 
 	// Case 2
-	if (static_branch_likely(&sched_nb_split_shared_hugepages)) {
-		int this_cpu = raw_smp_processor_id();
-		int this_cpu_nid = cpu_to_node(this_cpu);
+	if (static_branch_likely(&sched_nb_split_shared_hugepages)
+			&& !cpupid_pid_unset(last_cpupid) && cpupid_to_nid(last_cpupid) != this_cpu_nid) {
+		trace_printk("Attempting case 2 page split : last cpu node = %d, curr cpu node = %d", cpupid_to_nid(last_cpupid), this_cpu_nid);
+		
+		// START of copy paste from numa_migrate_prep
+		folio_get(folio);
 
-		if (!cpupid_pid_unset(last_cpupid) && cpupid_to_nid(last_cpupid) != this_cpu_nid) {
-			trace_printk("Attempting case 2 page split : last cpu node = %d, curr cpu node = %d", cpupid_to_nid(last_cpupid), this_cpu_nid);
-			
-			// START of copy paste from numa_migrate_prep
-			folio_get(folio);
+		/* Record the current PID acceesing VMA */
+		vma_set_access_pid_bit(vma);
 
-			/* Record the current PID acceesing VMA */
-			vma_set_access_pid_bit(vma);
+		count_vm_numa_event(NUMA_HINT_FAULTS);
+		if (nid == numa_node_id()) {
+			count_vm_numa_event(NUMA_HINT_FAULTS_LOCAL);
+			flags |= TNF_FAULT_LOCAL;
+		}
+		// END of copy paste from numa_migrate_prep
 
-			count_vm_numa_event(NUMA_HINT_FAULTS);
-			if (nid == numa_node_id()) {
-				count_vm_numa_event(NUMA_HINT_FAULTS_LOCAL);
-				flags |= TNF_FAULT_LOCAL;
+		// Mostly copy pasted from section below
+		spin_unlock(vmf->ptl);
+		int splitted = split_thp_on_page_fault(folio, vmf);
+		if (splitted) {
+			handle_unlock(vmf, (this_cpu_nid != nid) ? this_cpu_nid : NUMA_NO_NODE); // TODO Clem make it the node of cpu in case different from folio
+		} else {
+			nid = NUMA_NO_NODE;
+			vmf->ptl = pmd_lock(vma->vm_mm, vmf->pmd);
+			if (unlikely(!pmd_same(oldpmd, *vmf->pmd))) {
+				spin_unlock(vmf->ptl);
+				return 0;
 			}
-			// END of copy paste from numa_migrate_prep
+			goto out_map; 
+		}
 
-			// Mostly copy pasted from section below
+		// trace_printk("EXIT do_huge_pmd_numa_page without restoring protection on PMD");
+		return 0;
+	}
+
+	target_nid = numa_migrate_prep(folio, vma, haddr, nid, &flags);
+	if (target_nid == NUMA_NO_NODE) {
+		if (static_branch_likely(&sched_nb_split_shared_hugepages)
+				&& this_cpu_nid != nid) {
+			trace_printk("Attempting case 1 page split : curr cpu node = %d, folio node : %d", this_cpu_nid, nid);
+
+			// Here we don't need to include again the stuff in numa_migrate_prep
+			// TODO Move the stuff from numa_migrate_prep above so that we don't have it at several places
+
 			spin_unlock(vmf->ptl);
-			writable = false;
 			int splitted = split_thp_on_page_fault(folio, vmf);
 			if (splitted) {
-				handle_unlock(vmf, (this_cpu_nid != nid) ? this_cpu_nid : NUMA_NO_NODE); // TODO Clem make it the node of cpu in case different from folio
+				handle_unlock(vmf, this_cpu_nid);
 			} else {
 				nid = NUMA_NO_NODE;
 				vmf->ptl = pmd_lock(vma->vm_mm, vmf->pmd);
@@ -2260,13 +2283,9 @@ vm_fault_t do_huge_pmd_numa_page(struct vm_fault *vmf)
 				goto out_map; 
 			}
 
-			// trace_printk("EXIT do_huge_pmd_numa_page without restoring protection on PMD");
 			return 0;
 		}
-	}
 
-	target_nid = numa_migrate_prep(folio, vma, haddr, nid, &flags);
-	if (target_nid == NUMA_NO_NODE) {
 		folio_put(folio);
 		goto out_map;
 	}
