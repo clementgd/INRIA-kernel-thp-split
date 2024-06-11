@@ -1997,7 +1997,7 @@ static int split_thp_on_page_fault(struct folio *folio, struct vm_fault *vmf)
 	if (!split_folio(folio)) {
 		trace_printk("Successfully splitted folio");
 		// folio_address() of the resulting folio is PMD aligned, so we can just replace pte range from that address until the end of the pmd that we can get via the function 
-		if (static_branch_unlikely(&sched_nb_split_reapply_prot)) {
+		if (static_branch_likely(&sched_nb_split_reapply_prot)) {
 			make_folios_ptes_protnone(folio, nr);
 			trace_printk("split_thp_on_page_fault -- Successfully re-applied PROT_NONE protections");
 		}
@@ -2145,7 +2145,7 @@ out_map:
 	 * non-accessible ptes, some can allow access by kernel mode.
 	 */
 
-	if (static_branch_unlikely(&sched_nb_split_reapply_prot)) {
+	if (static_branch_likely(&sched_nb_split_reapply_prot)) {
 		old_pte = ptep_modify_prot_start(vma, vmf->address, vmf->pte);
 		// trace_printk("handle_unlock -- In out_map, Is old_pte protnone : %d", pte_protnone(old_pte));
 		pte = pte_modify(old_pte, vma->vm_page_prot);
@@ -2224,9 +2224,8 @@ vm_fault_t do_huge_pmd_numa_page(struct vm_fault *vmf)
 
 
 	// Case 2
-	if (static_branch_likely(&sched_nb_split_shared_hugepages)
-			&& !cpupid_pid_unset(last_cpupid) && cpupid_to_nid(last_cpupid) != this_cpu_nid) {
-		trace_printk("Attempting case 2 page split : last cpu node = %d, curr cpu node = %d", cpupid_to_nid(last_cpupid), this_cpu_nid);
+	if (static_branch_likely(&sched_nb_split_shared_hugepages) && this_cpu_nid != nid) {
+		trace_printk("Attempting aggressive page split : curr cpu node = %d, folio node : %d", this_cpu_nid, nid);
 		
 		// START of copy paste from numa_migrate_prep
 		folio_get(folio);
@@ -2262,30 +2261,6 @@ vm_fault_t do_huge_pmd_numa_page(struct vm_fault *vmf)
 
 	target_nid = numa_migrate_prep(folio, vma, haddr, nid, &flags);
 	if (target_nid == NUMA_NO_NODE) {
-		if (static_branch_likely(&sched_nb_split_shared_hugepages)
-				&& this_cpu_nid != nid) {
-			trace_printk("Attempting case 1 page split : curr cpu node = %d, folio node : %d", this_cpu_nid, nid);
-
-			// Here we don't need to include again the stuff in numa_migrate_prep
-			// TODO Move the stuff from numa_migrate_prep above so that we don't have it at several places
-
-			spin_unlock(vmf->ptl);
-			int splitted = split_thp_on_page_fault(folio, vmf);
-			if (splitted) {
-				handle_unlock(vmf, this_cpu_nid);
-			} else {
-				nid = NUMA_NO_NODE;
-				vmf->ptl = pmd_lock(vma->vm_mm, vmf->pmd);
-				if (unlikely(!pmd_same(oldpmd, *vmf->pmd))) {
-					spin_unlock(vmf->ptl);
-					return 0;
-				}
-				goto out_map; 
-			}
-
-			return 0;
-		}
-
 		folio_put(folio);
 		goto out_map;
 	}
@@ -3401,7 +3376,8 @@ static void make_folios_ptes_protnone(struct folio *folio, unsigned long nr) {
 			.rmap_one = make_pte_protnone,
 			.arg = folio,
 		};
-		// TODO Clem make sure this works correctly
+		// TODO Clem make sure this works correctly, and have a toggle for that one as well
+		// What we could do is play with the toggle and the regular NB scan rate to see if it actually works
 		folio_xchg_last_cpupid(folio, ((9 & LAST__CPU_MASK) << LAST__PID_SHIFT) | (-1 & LAST__PID_MASK));
 		rmap_walk_locked(folio, &rwc);
 		i += folio_nr_pages(folio);
