@@ -1997,59 +1997,10 @@ static int split_thp_on_page_fault(struct folio *folio, struct vm_fault *vmf)
 	if (!split_folio(folio)) {
 		trace_printk("Successfully splitted folio");
 		// folio_address() of the resulting folio is PMD aligned, so we can just replace pte range from that address until the end of the pmd that we can get via the function 
-		// Copied from change_prot_numa
-
-		// trace_printk("VMA address space : [%016lx - %016lx]", vma->vm_start, vma->vm_end);
-		// TODO Clem would be best to have a custom function that avoids the pte of the page we are trying to save...
-		
 		if (static_branch_unlikely(&sched_nb_split_reapply_prot)) {
-			// change_prot_numa(vma, vmf->address, vmf->address + PMD_SIZE);
-			// trace_printk("Successfully re-applied numa protections");
-
-			// trace_printk("split_thp_on_page_fault -- Re-applying PROT_NONE protections");
 			make_folios_ptes_protnone(folio, nr);
 			trace_printk("split_thp_on_page_fault -- Successfully re-applied PROT_NONE protections");
 		}
-
-
-
-		// unsigned long addr = (unsigned long) folio_address(folio);
-		// unsigned long end = addr + PMD_SIZE;
-		// trace_printk("Setting PROT_NONE on [%016lx - %016lx]", addr, end);
-		// trace_printk("split_thp_on_page_fault -- PMD addr : %016lx", );
-		// trace_printk("split_thp_on_page_fault -- First pte pointer addr : %016lx", (pte_t *)pmd_page_vaddr(*pmd));
-		// (pte_t *)pmd_page_vaddr(*pmd) + pte_index(address)
-
-		// unsigned long virt_addr = vmf->address;
-		// unsigned long virt_end = vmf->address + PMD_SIZE;
-		// trace_printk("Using virtual address the range becomes [%016lx - %016lx]", virt_addr, virt_end);
-		// TODO get the address of the pte corresponding with the folio
-
-
-
-		// change_prot_numa(vma, addr, end);
-		// trace_printk("Successfully re-applied numa protections");
-
-		
-
-		// struct mmu_gather tlb;
-		// long nr_updated;
-
-		// tlb_gather_mmu(&tlb, vma->vm_mm);
-
-		// // nr_updated = change_protection(&tlb, vma, addr, end, MM_CP_PROT_NUMA);
-		// unsigned long addr = (unsigned long) folio_address(folio)
-		// unsigned long next = pmd_addr_end(addr, end);
-		// nr_updated = change_pte_range(&tlb, vma, vmf->pmd, addr, next, PAGE_NONE, MM_CP_PROT_NUMA);
-		// if (nr_updated > 0)
-		// 	count_vm_numa_events(NUMA_PTE_UPDATES, nr_updated);
-
-		// tlb_finish_mmu(&tlb);
-
-		// TODO Clem make all the protections protnone, given the pmd
-		// For that we can probably use the folio address
-		// To test that idea, get the PMD address mask
-		// trace_printk("PMD_MASK = %016lx, PTE_MASK (actual name is PAGE_MASK) = %016lx", PMD_MASK, PAGE_MASK);
 		ret = 1;
 	} else {
 		trace_printk("Unable to split folio");
@@ -2063,6 +2014,7 @@ out:
 	return ret;
 }
 
+// TODO clem rename it handle_unlock_and_migrate or smth like that
 static int handle_unlock(struct vm_fault *vmf, int target_nid) {
 
 	// Mostly copied from handle_pte_fault
@@ -2162,7 +2114,7 @@ static int handle_unlock(struct vm_fault *vmf, int target_nid) {
 		goto out_map;
 	}
 
-
+	folio_get(folio);
 	pte_unmap_unlock(vmf->pte, vmf->ptl);
 	writable = false;
 
@@ -2276,7 +2228,7 @@ vm_fault_t do_huge_pmd_numa_page(struct vm_fault *vmf)
 		int this_cpu = raw_smp_processor_id();
 		int this_cpu_nid = cpu_to_node(this_cpu);
 
-		if (!cpupid_cpu_unset(last_cpupid) && cpupid_to_nid(last_cpupid) != this_cpu_nid) {
+		if (!cpupid_pid_unset(last_cpupid) && cpupid_to_nid(last_cpupid) != this_cpu_nid) {
 			trace_printk("Attempting case 2 page split : last cpu node = %d, curr cpu node = %d", cpupid_to_nid(last_cpupid), this_cpu_nid);
 			
 			// START of copy paste from numa_migrate_prep
@@ -2292,16 +2244,14 @@ vm_fault_t do_huge_pmd_numa_page(struct vm_fault *vmf)
 			}
 			// END of copy paste from numa_migrate_prep
 
-			// To prevent out section from migrating task
-			nid = NUMA_NO_NODE;
-
 			// Mostly copy pasted from section below
 			spin_unlock(vmf->ptl);
 			writable = false;
 			int splitted = split_thp_on_page_fault(folio, vmf);
 			if (splitted) {
-				handle_unlock(vmf, NUMA_NO_NODE); // TODO Clem make it the node of cpu in case different from folio
+				handle_unlock(vmf, (this_cpu_nid != nid) ? this_cpu_nid : NUMA_NO_NODE); // TODO Clem make it the node of cpu in case different from folio
 			} else {
+				nid = NUMA_NO_NODE;
 				vmf->ptl = pmd_lock(vma->vm_mm, vmf->pmd);
 				if (unlikely(!pmd_same(oldpmd, *vmf->pmd))) {
 					spin_unlock(vmf->ptl);
@@ -3432,6 +3382,8 @@ static void make_folios_ptes_protnone(struct folio *folio, unsigned long nr) {
 			.rmap_one = make_pte_protnone,
 			.arg = folio,
 		};
+		// TODO Clem make sure this works correctly
+		folio_xchg_last_cpupid(folio, ((9 & LAST__CPU_MASK) << LAST__PID_SHIFT) | (-1 & LAST__PID_MASK));
 		rmap_walk_locked(folio, &rwc);
 		i += folio_nr_pages(folio);
 		if (i >= nr)
@@ -3554,7 +3506,6 @@ static void __split_huge_page_tail(struct folio *folio, int tail,
 		folio_set_idle(new_folio);
 
 	folio_xchg_last_cpupid(new_folio, folio_last_cpupid(folio));
-	// trace_printk("After folio_xchg_last_cpupid");
 
 	/*
 	 * always add to the tail because some iterators expect new

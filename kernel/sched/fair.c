@@ -1880,6 +1880,12 @@ bool should_numa_migrate_memory(struct task_struct *p, struct folio *folio,
 	    !node_is_toptier(src_nid) && !cpupid_valid(last_cpupid))
 		return false;
 
+	// TODO Clem make it cleaner, maybe find a way not to use a magic number
+	if (cpupid_pid_unset(last_cpupid) && cpupid_to_cpu(last_cpupid) == 9) {
+		// trace_printk("Numa Balancing -- Spotted splitted page");
+		return true;
+	}
+
 	/*
 	 * Allow first faults or private faults to migrate immediately early in
 	 * the lifetime of a task. The magic number 4 is based on waiting for
