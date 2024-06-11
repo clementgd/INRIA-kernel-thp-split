@@ -2230,9 +2230,10 @@ vm_fault_t do_huge_pmd_numa_page(struct vm_fault *vmf)
 		// END of copy paste from numa_migrate_prep
 
 		// The lower we go the faster we are going to scan
+		int old_numa_scan_period = p->numa_scan_period;
 		p->numa_scan_period = clamp(sysctl_numa_balancing_scan_period_min * 2,
 			sysctl_numa_balancing_scan_period_min, (p->numa_scan_period * 6) / 10);
-		trace_printk("Lowered NUMAB scan period to : %u", p->numa_scan_period);
+		trace_printk("Lowered NUMAB scan period from %u to %u ms", old_numa_scan_period, p->numa_scan_period);
 		// Min and max
 
 		// Mostly copy pasted from section below
@@ -2253,9 +2254,10 @@ vm_fault_t do_huge_pmd_numa_page(struct vm_fault *vmf)
 		// trace_printk("EXIT do_huge_pmd_numa_page without restoring protection on PMD");
 		return 0;
 	} else {
-		p->numa_scan_period = clamp((p->numa_scan_period * 15) / 10,
+		int old_numa_scan_period = p->numa_scan_period;
+		p->numa_scan_period = clamp((p->numa_scan_period * 12) / 10,
 			sysctl_numa_balancing_scan_period_min, sysctl_numa_balancing_scan_period_max);
-		trace_printk("Increased NUMAB scan period to : %u", p->numa_scan_period);
+		trace_printk("Increased NUMAB scan period from %u to %u ms", old_numa_scan_period, p->numa_scan_period);
 	}
 
 	target_nid = numa_migrate_prep(folio, vma, haddr, nid, &flags);
