@@ -2231,8 +2231,8 @@ vm_fault_t do_huge_pmd_numa_page(struct vm_fault *vmf)
 
 		// The lower we go the faster we are going to scan
 		int old_numa_scan_period = p->numa_scan_period;
-		p->numa_scan_period = clamp(sysctl_numa_balancing_scan_period_min * 2,
-			sysctl_numa_balancing_scan_period_min, (p->numa_scan_period * 6) / 10);
+		p->numa_scan_period = clamp(p->numa_scan_period / 4,
+			sysctl_numa_balancing_scan_period_min, sysctl_numa_balancing_scan_period_max);
 		trace_printk("Lowered NUMAB scan period from %u to %u ms", old_numa_scan_period, p->numa_scan_period);
 		// Min and max
 
@@ -2255,7 +2255,7 @@ vm_fault_t do_huge_pmd_numa_page(struct vm_fault *vmf)
 		return 0;
 	} else {
 		int old_numa_scan_period = p->numa_scan_period;
-		p->numa_scan_period = clamp((p->numa_scan_period * 12) / 10,
+		p->numa_scan_period = clamp(p->numa_scan_period * 2,
 			sysctl_numa_balancing_scan_period_min, sysctl_numa_balancing_scan_period_max);
 		trace_printk("Increased NUMAB scan period from %u to %u ms", old_numa_scan_period, p->numa_scan_period);
 	}
