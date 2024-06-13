@@ -74,6 +74,8 @@ static unsigned long deferred_split_scan(struct shrinker *shrink,
 
 extern struct static_key_false sched_nb_split_shared_hugepages;
 extern struct static_key_false sched_nb_split_reapply_prot;
+extern struct static_key_false sched_nb_split_migrate_splitted;
+extern struct static_key_false sched_nb_split_reset_counters;
 extern unsigned int sysctl_numa_balancing_scan_period_min;
 extern unsigned int sysctl_numa_balancing_scan_period_max;
 
@@ -1970,13 +1972,6 @@ static int split_thp_on_page_fault(struct folio *folio, struct vm_fault *vmf)
 		goto out;
 	}
 
-	// if (!numamigrate_isolate_folio(pgdat, folio)) {
-	// 	trace_printk("ERROR : can't isolate folio");
-	// 	goto out;
-	// }
-
-	// list_add(&folio->lru, &splitpages);
-
 	// END of copied section from migrate_misplaced_folio
 
 
@@ -2100,6 +2095,10 @@ static int handle_unlock(struct vm_fault *vmf, int target_nid) {
 	    can_change_pte_writable(vma, vmf->address, pte))
 		writable = true;
 
+	if (!static_branch_likely(&sched_nb_split_migrate_splitted))
+		goto out_map;
+
+
 	folio = vm_normal_folio(vma, vmf->address, pte);
 	if (target_nid == NUMA_NO_NODE) {
 		trace_printk("target_nid is NUMA_NO_NODE, going to out_map. Folio addr : %016lx", (unsigned long) folio_address(folio));
@@ -2214,7 +2213,7 @@ vm_fault_t do_huge_pmd_numa_page(struct vm_fault *vmf)
 
 
 	if (static_branch_likely(&sched_nb_split_shared_hugepages) && this_cpu_nid != nid) {
-		trace_printk("Attempting aggressive page split : curr cpu node = %d, folio node : %d", this_cpu_nid, nid);
+		trace_printk("Attempting aggressive page split : curr cpu node : %d, folio node : %d, folio nr pages : %ld", this_cpu_nid, nid, folio_nr_pages(folio));
 		
 		// START of copy paste from numa_migrate_prep
 		folio_get(folio);
@@ -2266,7 +2265,6 @@ vm_fault_t do_huge_pmd_numa_page(struct vm_fault *vmf)
 		goto out_map;
 	}
 
-// migrate:
 	spin_unlock(vmf->ptl);
 	writable = false;
 
@@ -3379,7 +3377,8 @@ static void make_folios_ptes_protnone(struct folio *folio, unsigned long nr) {
 		};
 		// TODO Clem make sure this works correctly, and have a toggle for that one as well
 		// What we could do is play with the toggle and the regular NB scan rate to see if it actually works
-		folio_xchg_last_cpupid(folio, ((9 & LAST__CPU_MASK) << LAST__PID_SHIFT) | (-1 & LAST__PID_MASK));
+		if (static_branch_likely(&sched_nb_split_reset_counters))
+			folio_xchg_last_cpupid(folio, ((9 & LAST__CPU_MASK) << LAST__PID_SHIFT) | (-1 & LAST__PID_MASK));
 		rmap_walk_locked(folio, &rwc);
 		i += folio_nr_pages(folio);
 		if (i >= nr)

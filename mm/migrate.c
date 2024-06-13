@@ -2708,6 +2708,7 @@ int migrate_misplaced_folio(struct folio *folio, struct vm_area_struct *vma,
 	if (!isolated)
 		goto out;
 
+	trace_printk("migrate_misplaced_folio - folio nr pages : %ld", folio_nr_pages(folio));
 	list_add(&folio->lru, &migratepages);
 	nr_remaining = migrate_pages(&migratepages, alloc_misplaced_dst_folio,
 				     NULL, node, MIGRATE_ASYNC,
