@@ -2138,6 +2138,8 @@ extern struct static_key_false sched_numa_balancing;
 extern struct static_key_false sched_schedstats;
 extern struct static_key_false sched_nb_split_shared_hugepages;
 extern struct static_key_false sched_nb_split_reapply_prot;
+extern struct static_key_false sched_nb_split_migrate_splitted;
+extern struct static_key_false sched_nb_split_reset_counters;
 
 
 static inline u64 global_rt_period(void)

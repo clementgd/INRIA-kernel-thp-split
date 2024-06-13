@@ -4571,6 +4571,8 @@ static void __sched_fork(unsigned long clone_flags, struct task_struct *p)
 DEFINE_STATIC_KEY_FALSE(sched_numa_balancing); // TODO Diff betweem static key true / false ?
 DEFINE_STATIC_KEY_FALSE(sched_nb_split_shared_hugepages);
 DEFINE_STATIC_KEY_FALSE(sched_nb_split_reapply_prot);
+DEFINE_STATIC_KEY_FALSE(sched_nb_split_migrate_splitted);
+DEFINE_STATIC_KEY_FALSE(sched_nb_split_reset_counters);
 
 
 #ifdef CONFIG_NUMA_BALANCING
@@ -4578,6 +4580,8 @@ DEFINE_STATIC_KEY_FALSE(sched_nb_split_reapply_prot);
 int sysctl_numa_balancing_mode;
 static unsigned int sysctl_nb_split_shared_hugepages = 0; // Default value
 static unsigned int sysctl_nb_split_reapply_prot = 0;
+static unsigned int sysctl_nb_split_migrate_splitted = 0;
+static unsigned int sysctl_nb_split_reset_counters = 0;
 
 
 static void __set_numabalancing_state(bool enabled)
@@ -4606,6 +4610,26 @@ static void __set_nb_split_reapply_prot_state(bool enabled)
 		static_branch_enable(&sched_nb_split_reapply_prot);
 	else
 		static_branch_disable(&sched_nb_split_reapply_prot);
+}
+
+static void __set_nb_split_migrate_splitted_state(bool enabled)
+{
+	// Function name will be printed along with the message
+	trace_printk("NUMAB Setting sysctl to %d\n", enabled);
+	if (enabled)
+		static_branch_enable(&sched_nb_split_migrate_splitted);
+	else
+		static_branch_disable(&sched_nb_split_migrate_splitted);
+}
+
+static void __set_nb_split_reset_counters_state(bool enabled)
+{
+	// Function name will be printed along with the message
+	trace_printk("NUMAB Setting sysctl to %d\n", enabled);
+	if (enabled)
+		static_branch_enable(&sched_nb_split_reset_counters);
+	else
+		static_branch_disable(&sched_nb_split_reset_counters);
 }
 
 
@@ -4640,6 +4664,30 @@ static int sysctl_nb_split_reapply_prot_handler(struct ctl_table *table, int wri
 		return err;
 	if (write)
 		__set_nb_split_reapply_prot_state(sysctl_nb_split_reapply_prot);
+	return err;
+}
+
+static int sysctl_nb_split_migrate_splitted_handler(struct ctl_table *table, int write,
+			  void *buffer, size_t *lenp, loff_t *ppos)
+{
+	// Will write to `table->data`, that should be `sysctl_nb_split_migrate_splitted`
+	int err = proc_dointvec_minmax(table, write, buffer, lenp, ppos);
+	if (err < 0)
+		return err;
+	if (write)
+		__set_nb_split_migrate_splitted_state(sysctl_nb_split_migrate_splitted);
+	return err;
+}
+
+static int sysctl_nb_split_reset_counters_handler(struct ctl_table *table, int write,
+			  void *buffer, size_t *lenp, loff_t *ppos)
+{
+	// Will write to `table->data`, that should be `sysctl_nb_split_reset_counters`
+	int err = proc_dointvec_minmax(table, write, buffer, lenp, ppos);
+	if (err < 0)
+		return err;
+	if (write)
+		__set_nb_split_reset_counters_state(sysctl_nb_split_reset_counters);
 	return err;
 }
 
@@ -4808,6 +4856,24 @@ static struct ctl_table sched_core_sysctls[] = {
 		.maxlen		= sizeof(unsigned int),
 		.mode		= 0644,
 		.proc_handler	= sysctl_nb_split_reapply_prot_handler,
+		.extra1		= SYSCTL_ZERO, // Min value for the sysctl
+		.extra2		= SYSCTL_ONE, // Max value
+	},
+	{
+		.procname	= "nb_split_migrate_splitted",
+		.data		= &sysctl_nb_split_migrate_splitted,
+		.maxlen		= sizeof(unsigned int),
+		.mode		= 0644,
+		.proc_handler	= sysctl_nb_split_migrate_splitted_handler,
+		.extra1		= SYSCTL_ZERO, // Min value for the sysctl
+		.extra2		= SYSCTL_ONE, // Max value
+	},
+	{
+		.procname	= "nb_split_reset_counters",
+		.data		= &sysctl_nb_split_reset_counters,
+		.maxlen		= sizeof(unsigned int),
+		.mode		= 0644,
+		.proc_handler	= sysctl_nb_split_reset_counters_handler,
 		.extra1		= SYSCTL_ZERO, // Min value for the sysctl
 		.extra2		= SYSCTL_ONE, // Max value
 	},
